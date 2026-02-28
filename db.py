@@ -98,6 +98,7 @@ def init():
         db.commit()
     db.close()
     init_raw_materials()
+    init_sessions()
 
 def _hash(password):
     import hashlib
@@ -805,3 +806,71 @@ def export_excel(rows, path):
         max_len = max((len(str(c.value or '')) for c in col), default=0)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
     wb.save(path)
+
+
+# ── Session / Online Tracking ─────────────────────────────────────────────────
+def init_sessions():
+    from datetime import datetime as _dt
+    c = _conn()
+    c.executescript("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            username   TEXT NOT NULL,
+            role       TEXT DEFAULT '',
+            login_time TEXT NOT NULL,
+            last_seen  TEXT NOT NULL,
+            active     INTEGER DEFAULT 1
+        );
+    """)
+    c.commit()
+    c.close()
+
+def create_session(username, role=''):
+    from datetime import datetime as _dt
+    now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    c = _conn()
+    cur = c.execute(
+        "INSERT INTO sessions (username, role, login_time, last_seen) VALUES (?,?,?,?)",
+        (username, role, now, now)
+    )
+    sid = cur.lastrowid
+    c.commit()
+    c.close()
+    return sid
+
+def update_session_heartbeat(session_id):
+    from datetime import datetime as _dt
+    now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    c = _conn()
+    c.execute("UPDATE sessions SET last_seen=? WHERE id=?", (now, session_id))
+    c.commit()
+    c.close()
+
+def end_session(session_id):
+    c = _conn()
+    c.execute("UPDATE sessions SET active=0 WHERE id=?", (session_id,))
+    c.commit()
+    c.close()
+
+def get_active_sessions(minutes=10):
+    """Users active within the last N minutes (UTC)."""
+    c = _conn()
+    rows = c.execute(
+        "SELECT username, role, login_time, last_seen FROM sessions "
+        "WHERE active=1 AND last_seen >= datetime('now', ?) "
+        "ORDER BY last_seen DESC",
+        (f'-{minutes} minutes',)
+    ).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+def get_login_history(limit=100):
+    """Recent login sessions, newest first."""
+    c = _conn()
+    rows = c.execute(
+        "SELECT username, role, login_time, last_seen, active FROM sessions "
+        "ORDER BY login_time DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    c.close()
+    return [dict(r) for r in rows]

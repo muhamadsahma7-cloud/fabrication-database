@@ -70,7 +70,8 @@ def show_login():
                 else:
                     user = db.authenticate(username, password)
                     if user:
-                        st.session_state.user  = user
+                        st.session_state.user       = user
+                        st.session_state.session_id = db.create_session(user['username'], user['role'])
                         default = '📅 Report' if user['role'] == 'viewer' else '✏️ Daily Entry'
                         st.session_state.page  = default
                         st.session_state.queue = []
@@ -112,6 +113,8 @@ def show_sidebar():
         st.divider()
         st.caption(f'📅 {date.today().strftime("%d %B %Y")}')
         if st.button('🔓 Logout', use_container_width=True):
+            if 'session_id' in st.session_state:
+                db.end_session(st.session_state.session_id)
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
@@ -437,8 +440,8 @@ def page_delivery():
 def page_manage():
     st.header('⚙️ Manage Data')
 
-    tab_import, tab_export, tab_users, tab_danger = st.tabs(
-        ['📥 Import Excel', '📤 Export Master', '👥 Users', '⚠️ Danger Zone'])
+    tab_import, tab_export, tab_users, tab_online, tab_danger = st.tabs(
+        ['📥 Import Excel', '📤 Export Master', '👥 Users', '🟢 Online', '⚠️ Danger Zone'])
 
     # ── Import ────────────────────────────────────────────────────────────────
     with tab_import:
@@ -555,6 +558,34 @@ def page_manage():
                 db.delete_user_entry(int(act_uid))
                 st.success(f'Deleted user {int(act_uid)}.')
                 st.rerun()
+
+    # ── Online / Session Tracking ─────────────────────────────────────────────
+    with tab_online:
+        st.subheader('🟢 Currently Online')
+        st.caption('Users active in the last 10 minutes (UTC time).')
+        active = db.get_active_sessions(minutes=10)
+        if active:
+            role_labels = {'admin': '🔴 Admin', 'user': '🟡 User', 'viewer': '🔵 Viewer'}
+            for s in active:
+                rl  = role_labels.get(s['role'], s['role'].capitalize())
+                col1, col2, col3 = st.columns([1.2, 1.5, 1.5])
+                col1.markdown(f"**{s['username']}**")
+                col2.caption(f"{rl}")
+                col3.caption(f"Last seen: {s['last_seen']} UTC")
+        else:
+            st.info('No active sessions in the last 10 minutes.')
+
+        st.divider()
+        st.subheader('📋 Login History')
+        history = db.get_login_history(limit=100)
+        if history:
+            df_h = pd.DataFrame(history)
+            df_h['active'] = df_h['active'].map({1: '🟢 Online', 0: '⚫ Logged out'})
+            df_h.columns   = ['ID', 'Username', 'Role', 'Login Time (UTC)', 'Last Seen (UTC)', 'Status']
+            df_h = df_h.drop(columns=['ID'])
+            st.dataframe(df_h, use_container_width=True, hide_index=True)
+        else:
+            st.info('No login history yet.')
 
     # ── Danger Zone ───────────────────────────────────────────────────────────
     with tab_danger:
@@ -708,6 +739,14 @@ def main():
     if 'user' not in st.session_state:
         show_login()
         return
+
+    # ── Heartbeat: update last_seen every 30 s ────────────────────────────────
+    import time as _time
+    if 'session_id' in st.session_state:
+        now_ts = _time.time()
+        if now_ts - st.session_state.get('_last_hb', 0) >= 30:
+            db.update_session_heartbeat(st.session_state.session_id)
+            st.session_state._last_hb = now_ts
 
     show_sidebar()
 
