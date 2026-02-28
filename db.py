@@ -217,6 +217,30 @@ def delete_raw_material(rid):
     c.execute("DELETE FROM raw_materials WHERE id=?", (rid,))
     c.commit()
     c.close()
+    _reorder_raw_materials()
+
+def _reorder_raw_materials():
+    """Renumber raw_materials IDs sequentially after a deletion."""
+    c = _conn()
+    rows = c.execute(
+        "SELECT received_date, do_no, description, grade, qty, total_kg, remark, created_at "
+        "FROM raw_materials ORDER BY id"
+    ).fetchall()
+    c.execute("DELETE FROM raw_materials")
+    try:
+        c.execute("DELETE FROM sqlite_sequence WHERE name='raw_materials'")
+    except Exception:
+        pass
+    for r in rows:
+        c.execute(
+            "INSERT INTO raw_materials "
+            "(received_date, do_no, description, grade, qty, total_kg, remark, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (r['received_date'], r['do_no'], r['description'], r['grade'],
+             r['qty'], r['total_kg'], r['remark'], r['created_at'])
+        )
+    c.commit()
+    c.close()
 
 def import_raw_materials_excel(path):
     """Import raw materials from Excel.
