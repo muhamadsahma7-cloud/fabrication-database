@@ -623,6 +623,15 @@ def page_raw_material():
 
     st.markdown('---')
 
+    # ── Overall summary (always visible) ──────────────────────────────────────
+    summ = db.get_raw_material_summary()
+    sm1, sm2, sm3 = st.columns(3)
+    sm1.metric('Total Entries', f"{summ['entries']:,}")
+    sm2.metric('Total Qty Received', f"{summ['total_qty']:,.2f}")
+    sm3.metric('Total kg Received', f"{summ['total_kg']:,.2f} kg")
+
+    st.divider()
+
     c1, c2 = st.columns(2)
     with c1:
         start = st.date_input('From', value=date.today() - timedelta(days=30), key='rm_start')
@@ -645,6 +654,15 @@ def page_raw_material():
 
     rows = st.session_state.rm_rows
     if rows:
+        # ── Filtered summary ──────────────────────────────────────────────────
+        filt_qty = sum(r.get('qty', 0) for r in rows)
+        filt_kg  = sum(r.get('total_kg', 0) for r in rows)
+        fc1, fc2, fc3 = st.columns(3)
+        fc1.metric('Entries (filtered)', str(len(rows)))
+        fc2.metric('Qty (filtered)', f'{filt_qty:,.2f}')
+        fc3.metric('Total kg (filtered)', f'{filt_kg:,.2f} kg')
+
+        st.markdown('')
         df = pd.DataFrame(rows)[['id', 'received_date', 'do_no', 'description', 'grade', 'qty', 'total_kg', 'remark']]
         df.columns = ['ID', 'Received Date', 'D.O. No.', 'Description', 'Grade', 'Qty', 'Total kg', 'Remark']
         st.dataframe(df, use_container_width=True, hide_index=True)

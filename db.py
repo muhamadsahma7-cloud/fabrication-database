@@ -198,6 +198,18 @@ def add_raw_material(received_date, do_no, description, grade, qty, total_kg=0, 
     c.close()
     return rid
 
+def get_raw_material_summary():
+    """Return overall totals: total entries, total qty, total kg received."""
+    c = _conn()
+    row = c.execute(
+        "SELECT COUNT(*) as entries, "
+        "COALESCE(SUM(qty),0) as total_qty, "
+        "COALESCE(SUM(total_kg),0) as total_kg "
+        "FROM raw_materials"
+    ).fetchone()
+    c.close()
+    return dict(row) if row else {'entries': 0, 'total_qty': 0, 'total_kg': 0}
+
 def get_raw_materials(start=None, end=None):
     c = _conn()
     if start and end:
