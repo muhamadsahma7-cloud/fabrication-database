@@ -499,18 +499,6 @@ def page_manage():
             finally:
                 os.unlink(tmp_path)
 
-        st.divider()
-        st.subheader('Add Assembly Manually')
-        with st.form('add_asm'):
-            mark = st.text_input('Assembly Mark')
-            desc = st.text_input('Description (optional)')
-            if st.form_submit_button('Add Assembly', type='primary'):
-                if mark:
-                    db.add_assembly(mark.upper(), desc)
-                    st.success(f'Assembly {mark.upper()} added.')
-                    st.rerun()
-                else:
-                    st.error('Assembly Mark is required.')
 
     # ── Export ────────────────────────────────────────────────────────────────
     with tab_export:
