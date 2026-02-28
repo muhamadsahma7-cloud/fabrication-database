@@ -63,7 +63,8 @@ def show_login():
                     user = db.authenticate(username, password)
                     if user:
                         st.session_state.user  = user
-                        st.session_state.page  = '✏️ Daily Entry'
+                        default = '📅 Report' if user['role'] == 'viewer' else '✏️ Daily Entry'
+                        st.session_state.page  = default
                         st.session_state.queue = []
                         st.rerun()
                     else:
@@ -80,17 +81,22 @@ def show_sidebar():
         st.markdown(f'### 🏗️ Fabrication Tracker')
         st.caption(APP_VERSION)
         st.divider()
-        role_label = 'Administrator' if user['role'] == 'admin' else 'User'
+        role_labels = {'admin': 'Administrator', 'user': 'User', 'viewer': 'Viewer (QC)'}
+        role_label  = role_labels.get(user['role'], user['role'].capitalize())
         st.markdown(f"👤 **{user['username']}**  ({role_label})")
         st.divider()
 
-        pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery']
-        if user['role'] == 'admin':
-            pages.append('⚙️ Manage')
+        if user['role'] == 'viewer':
+            pages = ['📅 Report', '📊 Progress', '🚚 Delivery']
+        elif user['role'] == 'admin':
+            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery', '⚙️ Manage']
+        else:
+            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery']
 
+        default_page = pages[0]
+        current = st.session_state.get('page', default_page)
         page = st.radio('Navigation', pages, label_visibility='collapsed',
-                        index=pages.index(st.session_state.get('page', '✏️ Daily Entry'))
-                        if st.session_state.get('page') in pages else 0)
+                        index=pages.index(current) if current in pages else 0)
         st.session_state.page = page
 
         st.divider()
