@@ -213,6 +213,64 @@ def delete_raw_material(rid):
     c.commit()
     c.close()
 
+def import_raw_materials_excel(path):
+    """Import raw materials from Excel.
+    Expected columns (row 1 header): Received Date, D.O. Number, Description, Grade, Qty, Remark
+    Returns (count, error_message). error_message is None on success.
+    """
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        # find header row by looking for 'Description' or 'Received Date'
+        header_row = next(
+            (i for i, r in enumerate(rows)
+             if r and any(str(v).strip().lower() in ('description', 'received date')
+                          for v in r if v)),
+            None
+        )
+        if header_row is None:
+            return 0, "Header row not found. Ensure row 1 has: Received Date, D.O. Number, Description, Grade, Qty, Remark"
+        headers = [str(h).strip() if h else '' for h in rows[header_row]]
+        col = {h.lower(): i for i, h in enumerate(headers)}
+
+        def _get(row, *names, default=''):
+            for name in names:
+                idx = col.get(name.lower())
+                if idx is not None and idx < len(row) and row[idx] is not None:
+                    return row[idx]
+            return default
+
+        def _float(v):
+            try: return float(v or 0)
+            except: return 0.0
+
+        c = _conn()
+        count = 0
+        for row in rows[header_row + 1:]:
+            if not row or not any(v for v in row):
+                continue
+            desc = str(_get(row, 'description', default='')).strip()
+            if not desc:
+                continue
+            recv  = str(_get(row, 'received date', 'received_date', default='')).strip()
+            do_no = str(_get(row, 'd.o. number', 'do number', 'do no', 'do_no', default='')).strip()
+            grade = str(_get(row, 'grade', default='')).strip()
+            qty   = _float(_get(row, 'qty', 'quantity', default=0))
+            remark= str(_get(row, 'remark', 'remarks', default='')).strip()
+            c.execute(
+                "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, remark) "
+                "VALUES (?,?,?,?,?,?)",
+                (recv, do_no, desc, grade, qty, remark)
+            )
+            count += 1
+        c.commit()
+        c.close()
+        return count, None
+    except Exception as e:
+        return 0, str(e)
+
 def import_excel(path):
     try:
         import openpyxl

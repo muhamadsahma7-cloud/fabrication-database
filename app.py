@@ -572,25 +572,53 @@ def page_raw_material():
     role = st.session_state.user['role']
 
     if role != 'viewer':
-        with st.container(border=True):
-            st.subheader('Add Received Material')
-            with st.form('raw_form', clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    recv_date   = st.date_input('Received Date', value=date.today())
-                    do_no       = st.text_input('D.O. Number', placeholder='Delivery Order No.')
-                    description = st.text_input('Description', placeholder='e.g. UB 356x171x45')
-                with c2:
-                    grade  = st.text_input('Material Grade', placeholder='e.g. S275, S355')
-                    qty    = st.number_input('Qty', min_value=0.0, format='%.2f')
-                    remark = st.text_area('Remark', height=70)
-                if st.form_submit_button('➕ Add', type='primary', use_container_width=True):
-                    if not description:
-                        st.error('Description is required.')
-                    else:
-                        db.add_raw_material(recv_date, do_no, description, grade, qty, remark)
-                        st.success('Raw material entry added.')
-                        st.rerun()
+        col_add, col_imp = st.columns([1.4, 1])
+
+        with col_add:
+            with st.container(border=True):
+                st.subheader('Add Received Material')
+                with st.form('raw_form', clear_on_submit=True):
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        recv_date   = st.date_input('Received Date', value=date.today())
+                        do_no       = st.text_input('D.O. Number', placeholder='Delivery Order No.')
+                        description = st.text_input('Description', placeholder='e.g. UB 356x171x45')
+                    with c2:
+                        grade  = st.text_input('Material Grade', placeholder='e.g. S275, S355')
+                        qty    = st.number_input('Qty', min_value=0.0, format='%.2f')
+                        remark = st.text_area('Remark', height=70)
+                    if st.form_submit_button('➕ Add', type='primary', use_container_width=True):
+                        if not description:
+                            st.error('Description is required.')
+                        else:
+                            db.add_raw_material(recv_date, do_no, description, grade, qty, remark)
+                            st.success('Raw material entry added.')
+                            st.rerun()
+
+        with col_imp:
+            with st.container(border=True):
+                st.subheader('Import from Excel')
+                st.caption(
+                    'Excel columns (row 1 header):\n'
+                    '**Received Date · D.O. Number · Description · Grade · Qty · Remark**'
+                )
+                uploaded = st.file_uploader('Choose Excel file (.xlsx)', type=['xlsx', 'xls'],
+                                            key='rm_upload')
+                if uploaded and st.button('📥 Import', type='primary', use_container_width=True):
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+                        tmp.write(uploaded.read())
+                        tmp_path = tmp.name
+                    try:
+                        count, err = db.import_raw_materials_excel(tmp_path)
+                        if err:
+                            st.error(f'Import failed: {err}')
+                        else:
+                            st.success(f'Imported {count} records.')
+                            st.session_state.rm_rows = []
+                            st.rerun()
+                    finally:
+                        os.unlink(tmp_path)
 
     st.markdown('---')
 
