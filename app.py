@@ -30,9 +30,17 @@ STAGE_BADGE = {
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { background: #1e293b; }
+[data-testid="stSidebar"] {
+    background: #1e293b;
+    min-width: 280px !important;
+    max-width: 280px !important;
+}
 [data-testid="stSidebar"] * { color: #f1f5f9 !important; }
-[data-testid="stSidebar"] .stRadio label { font-size: 15px; }
+[data-testid="stSidebar"] .stRadio label {
+    font-size: 16px;
+    padding: 6px 4px;
+}
+[data-testid="stSidebar"] h3 { font-size: 18px !important; }
 div[data-testid="metric-container"] {
     background: white; border-radius: 8px;
     padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
