@@ -445,51 +445,55 @@ def page_manage():
 
     # ── Import ────────────────────────────────────────────────────────────────
     with tab_import:
-        st.subheader('Import from Excel')
-        st.caption('Columns: Assembly Mark, Sub-Assembly, Part Mark, No., Name, '
-                   'Profile, kg/m, Length, Weight, Profile2, Grade')
+        st.subheader('Import Master Database from Excel')
+
+        # ── Template download ──────────────────────────────────────────────────
+        tpl_buf = BytesIO()
+        import openpyxl as _xl
+        from openpyxl.styles import Font as _Font, PatternFill as _Fill, Alignment as _Align
+        tpl_wb = _xl.Workbook()
+        tpl_ws = tpl_wb.active
+        tpl_ws.title = 'Master Database'
+        tpl_headers = ['Assembly Mark', 'Sub-Assembly Mark', 'Part Mark', 'No.',
+                        'NAME', 'Profile', 'kg/m', 'Length', 'Total weight',
+                        'Profile2', 'Grade', 'Remark']
+        hdr_fill = _Fill('solid', fgColor='1E3A5F')
+        hdr_font = _Font(bold=True, color='FFFFFF')
+        for col, h in enumerate(tpl_headers, 1):
+            cell = tpl_ws.cell(row=1, column=col, value=h)
+            cell.fill = hdr_fill
+            cell.font = hdr_font
+            cell.alignment = _Align(horizontal='center')
+            tpl_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 14)
+        tpl_wb.save(tpl_buf)
+        st.download_button(
+            '📄 Download Template (.xlsx)',
+            tpl_buf.getvalue(),
+            'master_database_template.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        st.divider()
+        st.info(
+            '**Upload your revised Master Database Excel file.**  \n'
+            'This will overwrite all existing assemblies & parts with the new data.  \n'
+            '✅ All daily progress records are kept safe.'
+        )
         uploaded = st.file_uploader('Choose Excel file (.xlsx)', type=['xlsx', 'xls'])
-
-        if uploaded:
+        if st.button('📥 Import & Overwrite', type='primary', use_container_width=True,
+                     disabled=uploaded is None):
             import tempfile
-
-            def _save_tmp(f):
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-                    tmp.write(f.read())
-                    return tmp.name
-
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                st.info('**➕ Append** — adds new parts to existing data. '
-                        'Use when adding NEW assemblies to the current database.')
-                if st.button('➕ Append Import', type='primary', use_container_width=True):
-                    uploaded.seek(0)
-                    tmp_path = _save_tmp(uploaded)
-                    try:
-                        count, err = db.import_excel(tmp_path)
-                        if err:
-                            st.error(f'Import failed: {err}')
-                        else:
-                            st.success(f'Appended {count} parts successfully.')
-                    finally:
-                        os.unlink(tmp_path)
-
-            with col_b:
-                st.warning('**🔄 Replace** — clears ALL existing assemblies & parts, '
-                           'then reimports. **Progress records are kept safe.**\n\n'
-                           'Use when the master database has changed.')
-                if st.button('🔄 Replace & Reimport', use_container_width=True):
-                    uploaded.seek(0)
-                    tmp_path = _save_tmp(uploaded)
-                    try:
-                        count, err = db.replace_import_excel(tmp_path)
-                        if err:
-                            st.error(f'Import failed: {err}')
-                        else:
-                            st.success(f'Replaced database with {count} parts. Progress records preserved.')
-                    finally:
-                        os.unlink(tmp_path)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+                tmp.write(uploaded.read())
+                tmp_path = tmp.name
+            try:
+                count, err = db.replace_import_excel(tmp_path)
+                if err:
+                    st.error(f'Import failed: {err}')
+                else:
+                    st.success(f'✅ Imported {count} parts. All progress records preserved.')
+            finally:
+                os.unlink(tmp_path)
 
         st.divider()
         st.subheader('Add Assembly Manually')
@@ -666,13 +670,37 @@ def page_raw_material():
         with col_imp:
             with st.container(border=True):
                 st.subheader('Import from Excel')
-                st.caption(
-                    'Excel columns (row 1 header):\n'
-                    '**Received Date · D.O. Number · Description · Grade · Qty · Remark**'
+
+                # Template download
+                rm_tpl_buf = BytesIO()
+                import openpyxl as _xl2
+                from openpyxl.styles import Font as _Font2, PatternFill as _Fill2, Alignment as _Align2
+                rm_tpl_wb = _xl2.Workbook()
+                rm_tpl_ws = rm_tpl_wb.active
+                rm_tpl_ws.title = 'Raw Material'
+                rm_tpl_headers = ['Received Date', 'D.O. Number', 'Description', 'Grade', 'Qty', 'Total kg', 'Remark']
+                rm_hdr_fill = _Fill2('solid', fgColor='1E3A5F')
+                rm_hdr_font = _Font2(bold=True, color='FFFFFF')
+                for col, h in enumerate(rm_tpl_headers, 1):
+                    cell = rm_tpl_ws.cell(row=1, column=col, value=h)
+                    cell.fill = rm_hdr_fill
+                    cell.font = rm_hdr_font
+                    cell.alignment = _Align2(horizontal='center')
+                    rm_tpl_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 16)
+                rm_tpl_wb.save(rm_tpl_buf)
+                st.download_button(
+                    '📄 Download Template (.xlsx)',
+                    rm_tpl_buf.getvalue(),
+                    'raw_material_template.xlsx',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
                 )
+
+                st.caption('Columns: **Received Date · D.O. Number · Description · Grade · Qty · Total kg · Remark**')
                 uploaded = st.file_uploader('Choose Excel file (.xlsx)', type=['xlsx', 'xls'],
                                             key='rm_upload')
-                if uploaded and st.button('📥 Import', type='primary', use_container_width=True):
+                if st.button('📥 Import', type='primary', use_container_width=True,
+                             disabled=uploaded is None):
                     import tempfile
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
                         tmp.write(uploaded.read())
