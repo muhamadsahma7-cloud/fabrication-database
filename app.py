@@ -454,9 +454,13 @@ def page_manage():
         tpl_wb = _xl.Workbook()
         tpl_ws = tpl_wb.active
         tpl_ws.title = 'Master Database'
-        tpl_headers = ['Assembly Mark', 'Sub-Assembly Mark', 'Part Mark', 'No.',
-                        'NAME', 'Profile', 'kg/m', 'Length', 'Total weight',
-                        'Profile2', 'Grade', 'Remark']
+        tpl_headers = ['Assembly Mark', 'Sub Assembly', 'Part Mark', 'No.',
+                       'Name', 'Profile', 'kg/m', 'Length (mm)', 'Weight (kg)',
+                       'Profile 2', 'Grade', 'Remark',
+                       'FIT UP (kg)', 'FIT UP Date',
+                       'WELDING (kg)', 'WELDING Date',
+                       'BLASTING & PAINTING (kg)', 'BLASTING & PAINTING Date',
+                       'SEND TO SITE (kg)', 'SEND TO SITE Date']
         hdr_fill = _Fill('solid', fgColor='1E3A5F')
         hdr_font = _Font(bold=True, color='FFFFFF')
         for col, h in enumerate(tpl_headers, 1):

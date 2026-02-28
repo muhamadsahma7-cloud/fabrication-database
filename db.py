@@ -335,9 +335,12 @@ def import_excel(path):
         headers = [str(h).strip() if h else '' for h in rows[header_row]]
         col = {h: i for i, h in enumerate(headers)}
 
-        def _get(row, name, default=None):
-            idx = col.get(name)
-            return row[idx] if idx is not None and idx < len(row) else default
+        def _get(row, *names, default=None):
+            for name in names:
+                idx = col.get(name)
+                if idx is not None and idx < len(row) and row[idx] is not None:
+                    return row[idx]
+            return default
 
         def _float(v):
             try: return float(v or 0)
@@ -355,18 +358,18 @@ def import_excel(path):
             if not row or not _get(row, 'Assembly Mark'):
                 continue
 
-            asm  = str(_get(row, 'Assembly Mark', '')).strip()
-            sub  = str(_get(row, 'Sub-Assembly Mark', '') or '').strip()
-            pm   = str(_get(row, 'Part Mark', '') or '').strip()
-            no   = _int(_get(row, 'No.', 1))
-            name = str(_get(row, 'NAME', '') or '').strip()
-            prof = str(_get(row, 'Profile', '') or '').strip()
-            kgm  = _float(_get(row, 'kg/m', 0))
-            lmm  = _float(_get(row, 'Length', 0))
-            tw   = _float(_get(row, 'Total weight', 0))
-            prof2= str(_get(row, 'Profile2', '') or '').strip()
-            grade  = str(_get(row, 'Grade', '') or '').strip()
-            remark = str(_get(row, 'Remark', '') or '').strip()
+            asm  = str(_get(row, 'Assembly Mark', default='')).strip()
+            sub  = str(_get(row, 'Sub Assembly', 'Sub-Assembly Mark', 'Sub Assembly Mark', default='') or '').strip()
+            pm   = str(_get(row, 'Part Mark', default='') or '').strip()
+            no   = _int(_get(row, 'No.', default=1))
+            name = str(_get(row, 'Name', 'NAME', default='') or '').strip()
+            prof = str(_get(row, 'Profile', default='') or '').strip()
+            kgm  = _float(_get(row, 'kg/m', default=0))
+            lmm  = _float(_get(row, 'Length (mm)', 'Length', default=0))
+            tw   = _float(_get(row, 'Weight (kg)', 'Total weight', default=0))
+            prof2= str(_get(row, 'Profile 2', 'Profile2', default='') or '').strip()
+            grade  = str(_get(row, 'Grade', default='') or '').strip()
+            remark = str(_get(row, 'Remark', default='') or '').strip()
 
             db.execute(
                 "INSERT INTO parts (assembly_mark, sub_assembly_mark, part_mark, no, name, "
