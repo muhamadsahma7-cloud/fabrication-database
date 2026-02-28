@@ -506,7 +506,7 @@ def page_manage():
                 st.subheader('Add User')
                 uname = st.text_input('Username')
                 pwd   = st.text_input('Password', type='password')
-                role  = st.selectbox('Role', ['user', 'admin'])
+                role  = st.selectbox('Role', ['user', 'admin', 'viewer'])
                 if st.form_submit_button('Add User', type='primary'):
                     if not uname or not pwd:
                         st.error('Username and password required.')
