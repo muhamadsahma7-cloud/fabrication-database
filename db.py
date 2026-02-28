@@ -825,9 +825,12 @@ def init_sessions():
     c.commit()
     c.close()
 
+def _now_gmt8():
+    from datetime import datetime as _dt, timedelta as _td
+    return (_dt.utcnow() + _td(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
+
 def create_session(username, role=''):
-    from datetime import datetime as _dt
-    now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    now = _now_gmt8()
     c = _conn()
     cur = c.execute(
         "INSERT INTO sessions (username, role, login_time, last_seen) VALUES (?,?,?,?)",
@@ -839,8 +842,7 @@ def create_session(username, role=''):
     return sid
 
 def update_session_heartbeat(session_id):
-    from datetime import datetime as _dt
-    now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    now = _now_gmt8()
     c = _conn()
     c.execute("UPDATE sessions SET last_seen=? WHERE id=?", (now, session_id))
     c.commit()
@@ -853,13 +855,15 @@ def end_session(session_id):
     c.close()
 
 def get_active_sessions(minutes=10):
-    """Users active within the last N minutes (UTC)."""
+    """Users active within the last N minutes (GMT+8)."""
+    from datetime import datetime as _dt, timedelta as _td
+    threshold = (_dt.utcnow() + _td(hours=8) - _td(minutes=minutes)).strftime('%Y-%m-%d %H:%M:%S')
     c = _conn()
     rows = c.execute(
         "SELECT username, role, login_time, last_seen FROM sessions "
-        "WHERE active=1 AND last_seen >= datetime('now', ?) "
+        "WHERE active=1 AND last_seen >= ? "
         "ORDER BY last_seen DESC",
-        (f'-{minutes} minutes',)
+        (threshold,)
     ).fetchall()
     c.close()
     return [dict(r) for r in rows]

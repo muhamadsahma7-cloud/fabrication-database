@@ -562,7 +562,7 @@ def page_manage():
     # ── Online / Session Tracking ─────────────────────────────────────────────
     with tab_online:
         st.subheader('🟢 Currently Online')
-        st.caption('Users active in the last 10 minutes (UTC time).')
+        st.caption('Users active in the last 10 minutes (GMT+8).')
         active = db.get_active_sessions(minutes=10)
         if active:
             role_labels = {'admin': '🔴 Admin', 'user': '🟡 User', 'viewer': '🔵 Viewer'}
@@ -571,7 +571,7 @@ def page_manage():
                 col1, col2, col3 = st.columns([1.2, 1.5, 1.5])
                 col1.markdown(f"**{s['username']}**")
                 col2.caption(f"{rl}")
-                col3.caption(f"Last seen: {s['last_seen']} UTC")
+                col3.caption(f"Last seen: {s['last_seen']} GMT+8")
         else:
             st.info('No active sessions in the last 10 minutes.')
 
@@ -581,7 +581,7 @@ def page_manage():
         if history:
             df_h = pd.DataFrame(history)
             df_h['active'] = df_h['active'].map({1: '🟢 Online', 0: '⚫ Logged out'})
-            df_h.columns   = ['Username', 'Role', 'Login Time (UTC)', 'Last Seen (UTC)', 'Status']
+            df_h.columns   = ['Username', 'Role', 'Login Time (GMT+8)', 'Last Seen (GMT+8)', 'Status']
             st.dataframe(df_h, use_container_width=True, hide_index=True)
         else:
             st.info('No login history yet.')
