@@ -581,8 +581,7 @@ def page_manage():
         if history:
             df_h = pd.DataFrame(history)
             df_h['active'] = df_h['active'].map({1: '🟢 Online', 0: '⚫ Logged out'})
-            df_h.columns   = ['ID', 'Username', 'Role', 'Login Time (UTC)', 'Last Seen (UTC)', 'Status']
-            df_h = df_h.drop(columns=['ID'])
+            df_h.columns   = ['Username', 'Role', 'Login Time (UTC)', 'Last Seen (UTC)', 'Status']
             st.dataframe(df_h, use_container_width=True, hide_index=True)
         else:
             st.info('No login history yet.')
