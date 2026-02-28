@@ -168,25 +168,30 @@ def init_raw_materials():
             description   TEXT DEFAULT '',
             grade         TEXT DEFAULT '',
             qty           REAL DEFAULT 0,
+            total_kg      REAL DEFAULT 0,
             remark        TEXT DEFAULT '',
             created_at    TEXT DEFAULT (datetime('now','localtime'))
         )
     """)
     c.commit()
-    # Migration: add do_no column if missing
-    try:
-        c.execute("ALTER TABLE raw_materials ADD COLUMN do_no TEXT DEFAULT ''")
-        c.commit()
-    except Exception:
-        pass
+    # Migrations
+    for col_def in [
+        "ALTER TABLE raw_materials ADD COLUMN do_no TEXT DEFAULT ''",
+        "ALTER TABLE raw_materials ADD COLUMN total_kg REAL DEFAULT 0",
+    ]:
+        try:
+            c.execute(col_def)
+            c.commit()
+        except Exception:
+            pass
     c.close()
 
-def add_raw_material(received_date, do_no, description, grade, qty, remark=''):
+def add_raw_material(received_date, do_no, description, grade, qty, total_kg=0, remark=''):
     c = _conn()
     cur = c.execute(
-        "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, remark) "
-        "VALUES (?,?,?,?,?,?)",
-        (str(received_date), do_no.strip(), description.strip(), grade.strip(), qty, remark.strip())
+        "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, total_kg, remark) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (str(received_date), do_no.strip(), description.strip(), grade.strip(), qty, float(total_kg), remark.strip())
     )
     c.commit()
     rid = cur.lastrowid
@@ -254,15 +259,16 @@ def import_raw_materials_excel(path):
             desc = str(_get(row, 'description', default='')).strip()
             if not desc:
                 continue
-            recv  = str(_get(row, 'received date', 'received_date', default='')).strip()
-            do_no = str(_get(row, 'd.o. number', 'do number', 'do no', 'do_no', default='')).strip()
-            grade = str(_get(row, 'grade', default='')).strip()
-            qty   = _float(_get(row, 'qty', 'quantity', default=0))
-            remark= str(_get(row, 'remark', 'remarks', default='')).strip()
+            recv     = str(_get(row, 'received date', 'received_date', default='')).strip()
+            do_no    = str(_get(row, 'd.o. number', 'do number', 'do no', 'do_no', default='')).strip()
+            grade    = str(_get(row, 'grade', default='')).strip()
+            qty      = _float(_get(row, 'qty', 'quantity', default=0))
+            total_kg = _float(_get(row, 'total kg', 'total_kg', 'total weight', default=0))
+            remark   = str(_get(row, 'remark', 'remarks', default='')).strip()
             c.execute(
-                "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, remark) "
-                "VALUES (?,?,?,?,?,?)",
-                (recv, do_no, desc, grade, qty, remark)
+                "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, total_kg, remark) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (recv, do_no, desc, grade, qty, total_kg, remark)
             )
             count += 1
         c.commit()
