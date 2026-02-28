@@ -97,6 +97,7 @@ def init():
                    ('admin', _hash('admin123'), 'admin'))
         db.commit()
     db.close()
+    init_raw_materials()
 
 def _hash(password):
     import hashlib
@@ -153,6 +154,55 @@ def toggle_user_active(uid):
 def delete_user_entry(uid):
     c = _conn()
     c.execute("DELETE FROM users WHERE id=?", (uid,))
+    c.commit()
+    c.close()
+
+# ── Raw Material Delivery ─────────────────────────────────────────────────────
+def init_raw_materials():
+    c = _conn()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS raw_materials (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            received_date TEXT NOT NULL,
+            description   TEXT DEFAULT '',
+            grade         TEXT DEFAULT '',
+            qty           REAL DEFAULT 0,
+            remark        TEXT DEFAULT '',
+            created_at    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    c.commit()
+    c.close()
+
+def add_raw_material(received_date, description, grade, qty, remark=''):
+    c = _conn()
+    cur = c.execute(
+        "INSERT INTO raw_materials (received_date, description, grade, qty, remark) "
+        "VALUES (?,?,?,?,?)",
+        (str(received_date), description.strip(), grade.strip(), qty, remark.strip())
+    )
+    c.commit()
+    rid = cur.lastrowid
+    c.close()
+    return rid
+
+def get_raw_materials(start=None, end=None):
+    c = _conn()
+    if start and end:
+        rows = c.execute(
+            "SELECT * FROM raw_materials WHERE received_date BETWEEN ? AND ? "
+            "ORDER BY received_date DESC", (str(start), str(end))
+        ).fetchall()
+    else:
+        rows = c.execute(
+            "SELECT * FROM raw_materials ORDER BY received_date DESC"
+        ).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+def delete_raw_material(rid):
+    c = _conn()
+    c.execute("DELETE FROM raw_materials WHERE id=?", (rid,))
     c.commit()
     c.close()
 

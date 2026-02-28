@@ -87,11 +87,13 @@ def show_sidebar():
         st.divider()
 
         if user['role'] == 'viewer':
-            pages = ['📅 Report', '📊 Progress', '🚚 Delivery']
+            pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material']
         elif user['role'] == 'admin':
-            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery', '⚙️ Manage']
+            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery',
+                     '📦 Raw Material', '⚙️ Manage']
         else:
-            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery']
+            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery',
+                     '📦 Raw Material']
 
         default_page = pages[0]
         current = st.session_state.get('page', default_page)
@@ -563,6 +565,87 @@ def page_manage():
 # ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
+# Page: Raw Material Delivery
+# ══════════════════════════════════════════════════════════════════════════════
+def page_raw_material():
+    st.header('📦 Raw Material Delivery')
+    role = st.session_state.user['role']
+
+    if role != 'viewer':
+        with st.container(border=True):
+            st.subheader('Add Received Material')
+            with st.form('raw_form', clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    recv_date   = st.date_input('Received Date', value=date.today())
+                    description = st.text_input('Description', placeholder='e.g. UB 356x171x45')
+                with c2:
+                    grade  = st.text_input('Material Grade', placeholder='e.g. S275, S355')
+                    qty    = st.number_input('Qty', min_value=0.0, format='%.2f')
+                remark = st.text_area('Remark', height=70)
+                if st.form_submit_button('➕ Add', type='primary', use_container_width=True):
+                    if not description:
+                        st.error('Description is required.')
+                    else:
+                        db.add_raw_material(recv_date, description, grade, qty, remark)
+                        st.success('Raw material entry added.')
+                        st.rerun()
+
+    st.markdown('---')
+
+    c1, c2 = st.columns(2)
+    with c1:
+        start = st.date_input('From', value=date.today() - timedelta(days=30), key='rm_start')
+    with c2:
+        end = st.date_input('To', value=date.today(), key='rm_end')
+
+    bc1, bc2 = st.columns(2)
+    with bc1:
+        load     = st.button('🔍 Load by Date', type='primary', use_container_width=True)
+    with bc2:
+        load_all = st.button('📋 Show All', use_container_width=True)
+
+    if 'rm_rows' not in st.session_state:
+        st.session_state.rm_rows = []
+
+    if load:
+        st.session_state.rm_rows = db.get_raw_materials(str(start), str(end))
+    if load_all:
+        st.session_state.rm_rows = db.get_raw_materials()
+
+    rows = st.session_state.rm_rows
+    if rows:
+        df = pd.DataFrame(rows)[['id', 'received_date', 'description', 'grade', 'qty', 'remark']]
+        df.columns = ['ID', 'Received Date', 'Description', 'Grade', 'Qty', 'Remark']
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.download_button('📥 Export CSV',
+                               df.to_csv(index=False).encode('utf-8'),
+                               f'raw_material_{date.today()}.csv', 'text/csv',
+                               use_container_width=True)
+        with ec2:
+            buf = BytesIO()
+            df.to_excel(buf, index=False, engine='openpyxl')
+            st.download_button('📥 Export Excel', buf.getvalue(),
+                               f'raw_material_{date.today()}.xlsx',
+                               'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                               use_container_width=True)
+
+        if role != 'viewer':
+            with st.form('del_rm'):
+                del_id = st.number_input('Delete entry by ID', min_value=0, step=1, value=0)
+                if st.form_submit_button('🗑 Delete', type='secondary'):
+                    if del_id > 0:
+                        db.delete_raw_material(int(del_id))
+                        st.success(f'Deleted entry #{int(del_id)}')
+                        st.rerun()
+    else:
+        st.info('Click **Load by Date** or **Show All** to display records.')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 def main():
     db.init()
 
@@ -582,6 +665,8 @@ def main():
         page_progress()
     elif '🚚' in page:
         page_delivery()
+    elif '📦' in page:
+        page_raw_material()
     elif '⚙️' in page:
         page_manage()
 
