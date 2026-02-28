@@ -314,6 +314,15 @@ def import_raw_materials_excel(path):
     except Exception as e:
         return 0, str(e)
 
+def replace_import_excel(path):
+    """Clear all parts & assemblies (keeps progress), then reimport from Excel."""
+    c = _conn()
+    c.execute("DELETE FROM parts")
+    c.execute("DELETE FROM assemblies")
+    c.commit()
+    c.close()
+    return import_excel(path)
+
 def import_excel(path):
     try:
         import openpyxl

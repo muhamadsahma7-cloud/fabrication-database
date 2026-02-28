@@ -449,18 +449,47 @@ def page_manage():
         st.caption('Columns: Assembly Mark, Sub-Assembly, Part Mark, No., Name, '
                    'Profile, kg/m, Length, Weight, Profile2, Grade')
         uploaded = st.file_uploader('Choose Excel file (.xlsx)', type=['xlsx', 'xls'])
-        if uploaded and st.button('Import', type='primary'):
+
+        if uploaded:
             import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-                tmp.write(uploaded.read())
-                tmp_path = tmp.name
-            try:
-                count = db.import_excel(tmp_path)
-                st.success(f'Imported {count} parts successfully.')
-            except Exception as e:
-                st.error(f'Import failed: {e}')
-            finally:
-                os.unlink(tmp_path)
+
+            def _save_tmp(f):
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+                    tmp.write(f.read())
+                    return tmp.name
+
+            col_a, col_b = st.columns(2)
+
+            with col_a:
+                st.info('**➕ Append** — adds new parts to existing data. '
+                        'Use when adding NEW assemblies to the current database.')
+                if st.button('➕ Append Import', type='primary', use_container_width=True):
+                    uploaded.seek(0)
+                    tmp_path = _save_tmp(uploaded)
+                    try:
+                        count, err = db.import_excel(tmp_path)
+                        if err:
+                            st.error(f'Import failed: {err}')
+                        else:
+                            st.success(f'Appended {count} parts successfully.')
+                    finally:
+                        os.unlink(tmp_path)
+
+            with col_b:
+                st.warning('**🔄 Replace** — clears ALL existing assemblies & parts, '
+                           'then reimports. **Progress records are kept safe.**\n\n'
+                           'Use when the master database has changed.')
+                if st.button('🔄 Replace & Reimport', use_container_width=True):
+                    uploaded.seek(0)
+                    tmp_path = _save_tmp(uploaded)
+                    try:
+                        count, err = db.replace_import_excel(tmp_path)
+                        if err:
+                            st.error(f'Import failed: {err}')
+                        else:
+                            st.success(f'Replaced database with {count} parts. Progress records preserved.')
+                    finally:
+                        os.unlink(tmp_path)
 
         st.divider()
         st.subheader('Add Assembly Manually')
