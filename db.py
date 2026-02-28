@@ -164,6 +164,7 @@ def init_raw_materials():
         CREATE TABLE IF NOT EXISTS raw_materials (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             received_date TEXT NOT NULL,
+            do_no         TEXT DEFAULT '',
             description   TEXT DEFAULT '',
             grade         TEXT DEFAULT '',
             qty           REAL DEFAULT 0,
@@ -172,14 +173,20 @@ def init_raw_materials():
         )
     """)
     c.commit()
+    # Migration: add do_no column if missing
+    try:
+        c.execute("ALTER TABLE raw_materials ADD COLUMN do_no TEXT DEFAULT ''")
+        c.commit()
+    except Exception:
+        pass
     c.close()
 
-def add_raw_material(received_date, description, grade, qty, remark=''):
+def add_raw_material(received_date, do_no, description, grade, qty, remark=''):
     c = _conn()
     cur = c.execute(
-        "INSERT INTO raw_materials (received_date, description, grade, qty, remark) "
-        "VALUES (?,?,?,?,?)",
-        (str(received_date), description.strip(), grade.strip(), qty, remark.strip())
+        "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, remark) "
+        "VALUES (?,?,?,?,?,?)",
+        (str(received_date), do_no.strip(), description.strip(), grade.strip(), qty, remark.strip())
     )
     c.commit()
     rid = cur.lastrowid

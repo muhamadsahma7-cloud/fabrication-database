@@ -578,16 +578,17 @@ def page_raw_material():
                 c1, c2 = st.columns(2)
                 with c1:
                     recv_date   = st.date_input('Received Date', value=date.today())
+                    do_no       = st.text_input('D.O. Number', placeholder='Delivery Order No.')
                     description = st.text_input('Description', placeholder='e.g. UB 356x171x45')
                 with c2:
                     grade  = st.text_input('Material Grade', placeholder='e.g. S275, S355')
                     qty    = st.number_input('Qty', min_value=0.0, format='%.2f')
-                remark = st.text_area('Remark', height=70)
+                    remark = st.text_area('Remark', height=70)
                 if st.form_submit_button('➕ Add', type='primary', use_container_width=True):
                     if not description:
                         st.error('Description is required.')
                     else:
-                        db.add_raw_material(recv_date, description, grade, qty, remark)
+                        db.add_raw_material(recv_date, do_no, description, grade, qty, remark)
                         st.success('Raw material entry added.')
                         st.rerun()
 
@@ -615,8 +616,8 @@ def page_raw_material():
 
     rows = st.session_state.rm_rows
     if rows:
-        df = pd.DataFrame(rows)[['id', 'received_date', 'description', 'grade', 'qty', 'remark']]
-        df.columns = ['ID', 'Received Date', 'Description', 'Grade', 'Qty', 'Remark']
+        df = pd.DataFrame(rows)[['id', 'received_date', 'do_no', 'description', 'grade', 'qty', 'remark']]
+        df.columns = ['ID', 'Received Date', 'D.O. No.', 'Description', 'Grade', 'Qty', 'Remark']
         st.dataframe(df, use_container_width=True, hide_index=True)
 
         ec1, ec2 = st.columns(2)
