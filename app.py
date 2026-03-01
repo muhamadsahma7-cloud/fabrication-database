@@ -293,7 +293,7 @@ def page_daily_entry():
                    f"Total workers: **{regular + ot1 + ot2 + ot3 + sun_ph}**")
 
         st.caption('**Worker types**')
-        wc1, wc2, wc3, wc4, wc5, wc6 = st.columns(6)
+        wc1, wc2, wc3, wc4 = st.columns(4)
         with wc1:
             cutting_man = st.number_input('Cutting Man', min_value=0,
                                           value=existing.get('cutting_man', 0), step=1, key='mp_cut')
@@ -306,16 +306,26 @@ def page_daily_entry():
         with wc4:
             fitter = st.number_input('Fitter', min_value=0,
                                      value=existing.get('fitter', 0), step=1, key='mp_fit')
+        wc5, wc6, wc7, wc8 = st.columns(4)
         with wc5:
             helper = st.number_input('Helper', min_value=0,
                                      value=existing.get('helper', 0), step=1, key='mp_help')
         with wc6:
             semi_skill = st.number_input('Semi Skill', min_value=0,
                                          value=existing.get('semi_skill', 0), step=1, key='mp_semi')
+        with wc7:
+            material_coordinator = st.number_input('Material Coord.', min_value=0,
+                                                    value=existing.get('material_coordinator', 0),
+                                                    step=1, key='mp_mc')
+        with wc8:
+            material_handler = st.number_input('Material Handler', min_value=0,
+                                               value=existing.get('material_handler', 0),
+                                               step=1, key='mp_mh')
 
         if st.button('💾 Save Manpower', type='primary', use_container_width=True, key='mp_save'):
             db.save_manpower(mp_date, regular, ot1, ot2, ot3, sun_ph,
-                             cutting_man, supervisor, foremen, fitter, helper, semi_skill)
+                             cutting_man, supervisor, foremen, fitter, helper, semi_skill,
+                             material_coordinator, material_handler)
             st.success(f'Manpower saved for {mp_date}')
             st.rerun()
 

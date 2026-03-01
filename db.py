@@ -109,7 +109,8 @@ def init():
         )
     """)
     db.commit()
-    for col in ('cutting_man', 'supervisor', 'foremen', 'fitter', 'helper', 'semi_skill'):
+    for col in ('cutting_man', 'supervisor', 'foremen', 'fitter', 'helper', 'semi_skill',
+                'material_coordinator', 'material_handler'):
         try:
             db.execute(f"ALTER TABLE manpower ADD COLUMN {col} INTEGER DEFAULT 0")
             db.commit()
@@ -914,23 +915,28 @@ def get_login_history(limit=100):
 # ── Manpower ──────────────────────────────────────────────────────────────────
 
 def save_manpower(entry_date, regular, ot1, ot2, ot3, sun_ph,
-                  cutting_man=0, supervisor=0, foremen=0, fitter=0, helper=0, semi_skill=0):
+                  cutting_man=0, supervisor=0, foremen=0, fitter=0, helper=0, semi_skill=0,
+                  material_coordinator=0, material_handler=0):
     c = _conn()
     c.execute("""
         INSERT INTO manpower
             (entry_date, regular, ot1, ot2, ot3, sun_ph,
-             cutting_man, supervisor, foremen, fitter, helper, semi_skill)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+             cutting_man, supervisor, foremen, fitter, helper, semi_skill,
+             material_coordinator, material_handler)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(entry_date) DO UPDATE SET
             regular=excluded.regular, ot1=excluded.ot1, ot2=excluded.ot2,
             ot3=excluded.ot3, sun_ph=excluded.sun_ph,
             cutting_man=excluded.cutting_man, supervisor=excluded.supervisor,
             foremen=excluded.foremen, fitter=excluded.fitter,
-            helper=excluded.helper, semi_skill=excluded.semi_skill
+            helper=excluded.helper, semi_skill=excluded.semi_skill,
+            material_coordinator=excluded.material_coordinator,
+            material_handler=excluded.material_handler
     """, (str(entry_date),
           int(regular), int(ot1), int(ot2), int(ot3), int(sun_ph),
           int(cutting_man), int(supervisor), int(foremen),
-          int(fitter), int(helper), int(semi_skill)))
+          int(fitter), int(helper), int(semi_skill),
+          int(material_coordinator), int(material_handler)))
     c.commit()
     c.close()
 
