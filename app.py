@@ -269,6 +269,8 @@ def page_daily_entry():
         st.subheader('👷 Daily Manpower')
         mp_date  = st.date_input('Date', value=date.today(), key='mp_date')
         existing = db.get_manpower(mp_date) or {}
+
+        st.caption('**Shift hours**')
         mc1, mc2, mc3, mc4, mc5 = st.columns(5)
         with mc1:
             regular = st.number_input('Regular\n8:30–5:30', min_value=0,
@@ -285,11 +287,35 @@ def page_daily_entry():
         with mc5:
             sun_ph = st.number_input('Sun / PH', min_value=0,
                                      value=existing.get('sun_ph', 0), step=1, key='mp_sun')
+
         day_mh = regular * 7.5 + ot1 * 8.5 + ot2 * 9.5 + ot3 * 11.5 + sun_ph * 7.5
         st.caption(f"Manhours for this day: **{day_mh:.1f} hrs** · "
                    f"Total workers: **{regular + ot1 + ot2 + ot3 + sun_ph}**")
+
+        st.caption('**Worker types**')
+        wc1, wc2, wc3, wc4, wc5, wc6 = st.columns(6)
+        with wc1:
+            cutting_man = st.number_input('Cutting Man', min_value=0,
+                                          value=existing.get('cutting_man', 0), step=1, key='mp_cut')
+        with wc2:
+            supervisor = st.number_input('Supervisor', min_value=0,
+                                         value=existing.get('supervisor', 0), step=1, key='mp_sup')
+        with wc3:
+            foremen = st.number_input('Foremen', min_value=0,
+                                      value=existing.get('foremen', 0), step=1, key='mp_fore')
+        with wc4:
+            fitter = st.number_input('Fitter', min_value=0,
+                                     value=existing.get('fitter', 0), step=1, key='mp_fit')
+        with wc5:
+            helper = st.number_input('Helper', min_value=0,
+                                     value=existing.get('helper', 0), step=1, key='mp_help')
+        with wc6:
+            semi_skill = st.number_input('Semi Skill', min_value=0,
+                                         value=existing.get('semi_skill', 0), step=1, key='mp_semi')
+
         if st.button('💾 Save Manpower', type='primary', use_container_width=True, key='mp_save'):
-            db.save_manpower(mp_date, regular, ot1, ot2, ot3, sun_ph)
+            db.save_manpower(mp_date, regular, ot1, ot2, ot3, sun_ph,
+                             cutting_man, supervisor, foremen, fitter, helper, semi_skill)
             st.success(f'Manpower saved for {mp_date}')
             st.rerun()
 
