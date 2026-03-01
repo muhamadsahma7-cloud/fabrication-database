@@ -932,7 +932,7 @@ def get_manhour_summary():
     c.close()
     total_days = len(rows)
     total_mh = sum(
-        r['regular'] * 9 + r['ot1'] * 10 + r['ot2'] * 11 + r['ot3'] * 13.5 + r['sun_ph'] * 9
+        r['regular'] * 7.5 + r['ot1'] * 8.5 + r['ot2'] * 9.5 + r['ot3'] * 11.5 + r['sun_ph'] * 7.5
         for r in rows
     )
     avg = total_mh / total_days if total_days else 0

@@ -285,7 +285,7 @@ def page_daily_entry():
         with mc5:
             sun_ph = st.number_input('Sun / PH', min_value=0,
                                      value=existing.get('sun_ph', 0), step=1, key='mp_sun')
-        day_mh = regular * 9 + ot1 * 10 + ot2 * 11 + ot3 * 13.5 + sun_ph * 9
+        day_mh = regular * 7.5 + ot1 * 8.5 + ot2 * 9.5 + ot3 * 11.5 + sun_ph * 7.5
         st.caption(f"Manhours for this day: **{day_mh:.1f} hrs** · "
                    f"Total workers: **{regular + ot1 + ot2 + ot3 + sun_ph}**")
         if st.button('💾 Save Manpower', type='primary', use_container_width=True, key='mp_save'):
