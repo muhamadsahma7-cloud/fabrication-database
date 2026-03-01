@@ -273,7 +273,6 @@ def page_report():
 
     # ── Today's Activity ──────────────────────────────────────────────────────
     today_rows = db.search_progress(start=str(date.today()), end=str(date.today()))
-    today_total = sum(r['weight_kg'] for r in today_rows)
     today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
                       for s in db.STAGES}
 
@@ -283,11 +282,9 @@ def page_report():
     welding_avg  = (sum(r['weight_kg'] for r in welding_rows) / len(welding_rows)) if welding_rows else 0
 
     st.markdown(f"**Today's Activity** — {date.today().strftime('%d %b %Y')}")
-    tcols = st.columns(len(db.STAGES) + 1)
-    with tcols[0]:
-        st.metric('Total Today', f'{today_total:,.1f} kg')
+    tcols = st.columns(len(db.STAGES))
     for i, s in enumerate(db.STAGES):
-        with tcols[i + 1]:
+        with tcols[i]:
             st.metric(f'{STAGE_BADGE[s]} {s}', f'{today_by_stage[s]:,.1f} kg')
 
     acols = st.columns(2)
