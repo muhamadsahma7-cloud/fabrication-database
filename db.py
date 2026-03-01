@@ -96,6 +96,19 @@ def init():
         db.execute("INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
                    ('admin', _hash('admin123'), 'admin'))
         db.commit()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS manpower (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_date  TEXT NOT NULL UNIQUE,
+            regular     INTEGER DEFAULT 0,
+            ot1         INTEGER DEFAULT 0,
+            ot2         INTEGER DEFAULT 0,
+            ot3         INTEGER DEFAULT 0,
+            sun_ph      INTEGER DEFAULT 0,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    db.commit()
     db.close()
     init_raw_materials()
     init_sessions()
@@ -890,3 +903,37 @@ def get_login_history(limit=100):
     ).fetchall()
     c.close()
     return [dict(r) for r in rows]
+
+
+# ── Manpower ──────────────────────────────────────────────────────────────────
+
+def save_manpower(entry_date, regular, ot1, ot2, ot3, sun_ph):
+    c = _conn()
+    c.execute("""
+        INSERT INTO manpower (entry_date, regular, ot1, ot2, ot3, sun_ph)
+        VALUES (?,?,?,?,?,?)
+        ON CONFLICT(entry_date) DO UPDATE SET
+            regular=excluded.regular, ot1=excluded.ot1, ot2=excluded.ot2,
+            ot3=excluded.ot3, sun_ph=excluded.sun_ph
+    """, (str(entry_date), int(regular), int(ot1), int(ot2), int(ot3), int(sun_ph)))
+    c.commit()
+    c.close()
+
+def get_manpower(entry_date):
+    c = _conn()
+    row = c.execute("SELECT * FROM manpower WHERE entry_date=?", (str(entry_date),)).fetchone()
+    c.close()
+    return dict(row) if row else None
+
+def get_manhour_summary():
+    """Total manhours, total days logged, and average manhours per day."""
+    c = _conn()
+    rows = c.execute("SELECT regular, ot1, ot2, ot3, sun_ph FROM manpower").fetchall()
+    c.close()
+    total_days = len(rows)
+    total_mh = sum(
+        r['regular'] * 9 + r['ot1'] * 10 + r['ot2'] * 11 + r['ot3'] * 13.5 + r['sun_ph'] * 9
+        for r in rows
+    )
+    avg = total_mh / total_days if total_days else 0
+    return {'total_manhours': total_mh, 'total_days': total_days, 'avg_per_day': avg}

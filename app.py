@@ -264,6 +264,35 @@ def page_daily_entry():
             else:
                 st.info('No entries saved today.')
 
+    st.markdown('---')
+    with st.container(border=True):
+        st.subheader('👷 Daily Manpower')
+        mp_date  = st.date_input('Date', value=date.today(), key='mp_date')
+        existing = db.get_manpower(mp_date) or {}
+        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+        with mc1:
+            regular = st.number_input('Regular\n8:30–5:30', min_value=0,
+                                      value=existing.get('regular', 0), step=1, key='mp_reg')
+        with mc2:
+            ot1 = st.number_input('OT →6:30', min_value=0,
+                                  value=existing.get('ot1', 0), step=1, key='mp_ot1')
+        with mc3:
+            ot2 = st.number_input('OT →7:30', min_value=0,
+                                  value=existing.get('ot2', 0), step=1, key='mp_ot2')
+        with mc4:
+            ot3 = st.number_input('OT →10:00', min_value=0,
+                                  value=existing.get('ot3', 0), step=1, key='mp_ot3')
+        with mc5:
+            sun_ph = st.number_input('Sun / PH', min_value=0,
+                                     value=existing.get('sun_ph', 0), step=1, key='mp_sun')
+        day_mh = regular * 9 + ot1 * 10 + ot2 * 11 + ot3 * 13.5 + sun_ph * 9
+        st.caption(f"Manhours for this day: **{day_mh:.1f} hrs** · "
+                   f"Total workers: **{regular + ot1 + ot2 + ot3 + sun_ph}**")
+        if st.button('💾 Save Manpower', type='primary', use_container_width=True, key='mp_save'):
+            db.save_manpower(mp_date, regular, ot1, ot2, ot3, sun_ph)
+            st.success(f'Manpower saved for {mp_date}')
+            st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Page: Report
@@ -296,6 +325,14 @@ def page_report():
             elif s == 'WELDING':
                 st.metric('Avg/Day', f'{welding_avg:,.1f} kg',
                           f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
+
+    mh = db.get_manhour_summary()
+    if mh['total_days']:
+        mh_cols = st.columns([1, 3])
+        with mh_cols[0]:
+            st.metric('Avg Manhour/Day',
+                      f"{mh['avg_per_day']:,.1f} hrs",
+                      f"{mh['total_manhours']:,.1f} hrs ÷ {mh['total_days']} day{'s' if mh['total_days']!=1 else ''}")
     st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)
