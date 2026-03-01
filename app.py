@@ -276,10 +276,14 @@ def page_report():
     today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
                       for s in db.STAGES}
 
-    fitup_rows   = [r for r in today_rows if r['stage'] == 'FIT UP']
-    welding_rows = [r for r in today_rows if r['stage'] == 'WELDING']
-    fitup_avg    = (sum(r['weight_kg'] for r in fitup_rows)   / len(fitup_rows))   if fitup_rows   else 0
-    welding_avg  = (sum(r['weight_kg'] for r in welding_rows) / len(welding_rows)) if welding_rows else 0
+    all_fitup   = db.search_progress(stage='FIT UP')
+    all_welding = db.search_progress(stage='WELDING')
+    fitup_total_kg   = sum(r['weight_kg'] for r in all_fitup)
+    welding_total_kg = sum(r['weight_kg'] for r in all_welding)
+    fitup_days   = len({r['entry_date'] for r in all_fitup})
+    welding_days = len({r['entry_date'] for r in all_welding})
+    fitup_avg    = fitup_total_kg   / fitup_days   if fitup_days   else 0
+    welding_avg  = welding_total_kg / welding_days if welding_days else 0
 
     st.markdown(f"**Today's Activity** — {date.today().strftime('%d %b %Y')}")
     tcols = st.columns(len(db.STAGES))
@@ -289,11 +293,11 @@ def page_report():
 
     acols = st.columns(2)
     with acols[0]:
-        st.metric('Avg/Entry — Fit Up', f'{fitup_avg:,.1f} kg',
-                  f'{len(fitup_rows)} entr{"y" if len(fitup_rows)==1 else "ies"}')
+        st.metric('Avg/Day — Fit Up', f'{fitup_avg:,.1f} kg',
+                  f'{fitup_total_kg:,.1f} kg ÷ {fitup_days} day{"s" if fitup_days!=1 else ""}')
     with acols[1]:
-        st.metric('Avg/Entry — Welding', f'{welding_avg:,.1f} kg',
-                  f'{len(welding_rows)} entr{"y" if len(welding_rows)==1 else "ies"}')
+        st.metric('Avg/Day — Welding', f'{welding_avg:,.1f} kg',
+                  f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
     st.divider()
 
     c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
