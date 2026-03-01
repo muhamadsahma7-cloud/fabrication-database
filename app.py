@@ -337,12 +337,22 @@ def page_report():
                           f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
 
     mh = db.get_manhour_summary()
-    if mh['total_days']:
-        mh_cols = st.columns([1, 3])
-        with mh_cols[0]:
-            st.metric('Avg Manhour/Day',
-                      f"{mh['avg_per_day']:,.1f} hrs",
-                      f"{mh['total_manhours']:,.1f} hrs ÷ {mh['total_days']} day{'s' if mh['total_days']!=1 else ''}")
+    today_grid = db.get_manpower_grid(date.today())
+    today_mh   = sum(
+        count * db.SHIFT_HOURS[sk]
+        for shifts in today_grid.values()
+        for sk, count in shifts.items()
+    )
+    mh_cols = st.columns(3)
+    with mh_cols[0]:
+        st.metric("Today's Manhours", f"{today_mh:,.1f} hrs")
+    with mh_cols[1]:
+        st.metric('Avg Manhour/Day',
+                  f"{mh['avg_per_day']:,.1f} hrs",
+                  f"{mh['total_manhours']:,.1f} hrs ÷ {mh['total_days']} day{'s' if mh['total_days']!=1 else ''}"
+                  if mh['total_days'] else None)
+    with mh_cols[2]:
+        st.metric('Total Manhours', f"{mh['total_manhours']:,.1f} hrs")
     st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)
