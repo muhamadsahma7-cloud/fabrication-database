@@ -298,6 +298,10 @@ def page_report():
                           f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
     st.divider()
 
+    # Placeholder: summary metrics will be injected here (above filters)
+    summary_container = st.container()
+
+    # ── Filters — always visible, directly above table ────────────────────────
     c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
     with c1:
         start = st.date_input('From', value=date.today() - timedelta(days=7), key='rpt_start')
@@ -333,17 +337,18 @@ def page_report():
         stage_totals  = {s: sum(r['weight_kg'] for r in rows if r['stage'] == s)
                          for s in db.STAGES}
 
-        st.divider()
-        metric_cols = st.columns(len(db.STAGES) + 1)
-        with metric_cols[0]:
-            st.metric('Total Weight (Project)', f'{project_total:,.1f} kg')
-        for i, s in enumerate(db.STAGES):
-            pct = min(stage_totals[s] / project_total * 100, 100) if project_total else 0
-            with metric_cols[i + 1]:
-                st.metric(f'{STAGE_BADGE[s]} {s}',
-                          f'{stage_totals[s]:,.1f} kg', f'{pct:.1f}%')
+        # Fill the placeholder above the filters
+        with summary_container:
+            metric_cols = st.columns(len(db.STAGES) + 1)
+            with metric_cols[0]:
+                st.metric('Total Weight (Project)', f'{project_total:,.1f} kg')
+            for i, s in enumerate(db.STAGES):
+                pct = min(stage_totals[s] / project_total * 100, 100) if project_total else 0
+                with metric_cols[i + 1]:
+                    st.metric(f'{STAGE_BADGE[s]} {s}',
+                              f'{stage_totals[s]:,.1f} kg', f'{pct:.1f}%')
+            st.divider()
 
-        st.divider()
         df = pd.DataFrame(rows)[
             ['entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
              'delivery_order_no', 'weight_kg', 'qty', 'remarks']]
