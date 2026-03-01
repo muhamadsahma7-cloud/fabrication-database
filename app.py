@@ -268,64 +268,38 @@ def page_daily_entry():
     with st.container(border=True):
         st.subheader('👷 Daily Manpower')
         mp_date  = st.date_input('Date', value=date.today(), key='mp_date')
-        existing = db.get_manpower(mp_date) or {}
+        existing = db.get_manpower_grid(mp_date)
 
-        st.caption('**Shift hours**')
-        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-        with mc1:
-            regular = st.number_input('Regular\n8:30–5:30', min_value=0,
-                                      value=existing.get('regular', 0), step=1, key='mp_reg')
-        with mc2:
-            ot1 = st.number_input('OT →6:30', min_value=0,
-                                  value=existing.get('ot1', 0), step=1, key='mp_ot1')
-        with mc3:
-            ot2 = st.number_input('OT →7:30', min_value=0,
-                                  value=existing.get('ot2', 0), step=1, key='mp_ot2')
-        with mc4:
-            ot3 = st.number_input('OT →10:00', min_value=0,
-                                  value=existing.get('ot3', 0), step=1, key='mp_ot3')
-        with mc5:
-            sun_ph = st.number_input('Sun / PH', min_value=0,
-                                     value=existing.get('sun_ph', 0), step=1, key='mp_sun')
+        # Header row
+        hcols = st.columns([1.6, 1, 1, 1, 1, 1])
+        hcols[0].markdown('**Worker Type**')
+        for i, label in enumerate(db.SHIFT_LABELS):
+            hcols[i + 1].markdown(f'**{label}**')
 
-        day_mh = regular * 7.5 + ot1 * 8.5 + ot2 * 9.5 + ot3 * 11.5 + sun_ph * 7.5
-        st.caption(f"Manhours for this day: **{day_mh:.1f} hrs** · "
-                   f"Total workers: **{regular + ot1 + ot2 + ot3 + sun_ph}**")
+        # Grid: one row per worker type, one column per shift
+        new_grid = {}
+        day_mh = 0
+        total_workers = 0
+        for wtype in db.WORKER_TYPES:
+            wslug = wtype.lower().replace(' ', '_')
+            row   = st.columns([1.6, 1, 1, 1, 1, 1])
+            row[0].markdown(wtype)
+            new_grid[wtype] = {}
+            for j, shift_key in enumerate(db.SHIFT_KEYS):
+                val = existing.get(wtype, {}).get(shift_key, 0)
+                count = row[j + 1].number_input(
+                    '', min_value=0, value=val, step=1,
+                    key=f'mp_{wslug}_{shift_key}', label_visibility='collapsed'
+                )
+                new_grid[wtype][shift_key] = count
+                day_mh       += count * db.SHIFT_HOURS[shift_key]
+                total_workers += count
 
-        st.caption('**Worker types**')
-        wc1, wc2, wc3, wc4 = st.columns(4)
-        with wc1:
-            cutting_man = st.number_input('Cutting Man', min_value=0,
-                                          value=existing.get('cutting_man', 0), step=1, key='mp_cut')
-        with wc2:
-            supervisor = st.number_input('Supervisor', min_value=0,
-                                         value=existing.get('supervisor', 0), step=1, key='mp_sup')
-        with wc3:
-            foremen = st.number_input('Foremen', min_value=0,
-                                      value=existing.get('foremen', 0), step=1, key='mp_fore')
-        with wc4:
-            fitter = st.number_input('Fitter', min_value=0,
-                                     value=existing.get('fitter', 0), step=1, key='mp_fit')
-        wc5, wc6, wc7, wc8 = st.columns(4)
-        with wc5:
-            helper = st.number_input('Helper', min_value=0,
-                                     value=existing.get('helper', 0), step=1, key='mp_help')
-        with wc6:
-            semi_skill = st.number_input('Semi Skill', min_value=0,
-                                         value=existing.get('semi_skill', 0), step=1, key='mp_semi')
-        with wc7:
-            material_coordinator = st.number_input('Material Coord.', min_value=0,
-                                                    value=existing.get('material_coordinator', 0),
-                                                    step=1, key='mp_mc')
-        with wc8:
-            material_handler = st.number_input('Material Handler', min_value=0,
-                                               value=existing.get('material_handler', 0),
-                                               step=1, key='mp_mh')
+        st.caption(f"Manhours for this day: **{day_mh:,.1f} hrs** · "
+                   f"Total workers: **{total_workers}**")
 
         if st.button('💾 Save Manpower', type='primary', use_container_width=True, key='mp_save'):
-            db.save_manpower(mp_date, regular, ot1, ot2, ot3, sun_ph,
-                             cutting_man, supervisor, foremen, fitter, helper, semi_skill,
-                             material_coordinator, material_handler)
+            db.save_manpower_grid(mp_date, new_grid)
             st.success(f'Manpower saved for {mp_date}')
             st.rerun()
 

@@ -3,6 +3,14 @@ from datetime import date
 
 STAGES = ['FIT UP', 'WELDING', 'BLASTING & PAINTING', 'SEND TO SITE']
 
+WORKER_TYPES = [
+    'Cutting Man', 'Supervisor', 'Foremen', 'Fitter',
+    'Helper', 'Semi Skill', 'Material Coordinator', 'Material Handler',
+]
+SHIFT_LABELS = ['Regular', 'OT→6:30', 'OT→7:30', 'OT→10:00', 'Sun/PH']
+SHIFT_KEYS   = ['regular', 'ot1', 'ot2', 'ot3', 'sun_ph']
+SHIFT_HOURS  = {'regular': 7.5, 'ot1': 8.5, 'ot2': 9.5, 'ot3': 11.5, 'sun_ph': 7.5}
+
 def _db_path():
     # Store progress.db next to the .exe (or script) so data is portable
     if getattr(sys, 'frozen', False):
@@ -116,6 +124,17 @@ def init():
             db.commit()
         except Exception:
             pass
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS manpower_detail (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_date  TEXT NOT NULL,
+            worker_type TEXT NOT NULL,
+            shift       TEXT NOT NULL,
+            count       INTEGER DEFAULT 0,
+            UNIQUE(entry_date, worker_type, shift)
+        )
+    """)
+    db.commit()
     db.close()
     init_raw_materials()
     init_sessions()
@@ -946,15 +965,41 @@ def get_manpower(entry_date):
     c.close()
     return dict(row) if row else None
 
+def save_manpower_grid(entry_date, grid):
+    """Save a full grid {worker_type: {shift_key: count}} for a date."""
+    c = _conn()
+    c.execute("DELETE FROM manpower_detail WHERE entry_date=?", (str(entry_date),))
+    for wtype, shifts in grid.items():
+        for shift_key, count in shifts.items():
+            if int(count) > 0:
+                c.execute("""
+                    INSERT INTO manpower_detail (entry_date, worker_type, shift, count)
+                    VALUES (?,?,?,?)
+                """, (str(entry_date), wtype, shift_key, int(count)))
+    c.commit()
+    c.close()
+
+def get_manpower_grid(entry_date):
+    """Return {worker_type: {shift_key: count}} for a date."""
+    c = _conn()
+    rows = c.execute(
+        "SELECT worker_type, shift, count FROM manpower_detail WHERE entry_date=?",
+        (str(entry_date),)
+    ).fetchall()
+    c.close()
+    grid = {}
+    for r in rows:
+        grid.setdefault(r['worker_type'], {})[r['shift']] = r['count']
+    return grid
+
 def get_manhour_summary():
     """Total manhours, total days logged, and average manhours per day."""
     c = _conn()
-    rows = c.execute("SELECT regular, ot1, ot2, ot3, sun_ph FROM manpower").fetchall()
+    rows = c.execute(
+        "SELECT entry_date, shift, SUM(count) as total FROM manpower_detail GROUP BY entry_date, shift"
+    ).fetchall()
     c.close()
-    total_days = len(rows)
-    total_mh = sum(
-        r['regular'] * 7.5 + r['ot1'] * 8.5 + r['ot2'] * 9.5 + r['ot3'] * 11.5 + r['sun_ph'] * 7.5
-        for r in rows
-    )
+    total_days = len({r['entry_date'] for r in rows})
+    total_mh   = sum(r['total'] * SHIFT_HOURS.get(r['shift'], 0) for r in rows)
     avg = total_mh / total_days if total_days else 0
     return {'total_manhours': total_mh, 'total_days': total_days, 'avg_per_day': avg}
