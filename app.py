@@ -2,6 +2,7 @@ import streamlit as st
 import db
 import pandas as pd
 import os
+import base64
 from datetime import date, timedelta
 from io import BytesIO
 
@@ -96,13 +97,13 @@ def show_sidebar():
         st.divider()
 
         if user['role'] == 'viewer':
-            pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material']
+            pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing']
         elif user['role'] == 'admin':
             pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery',
-                     '📦 Raw Material', '⚙️ Manage']
+                     '📦 Raw Material', '🖼️ Drawing', '⚙️ Manage']
         else:
             pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery',
-                     '📦 Raw Material']
+                     '📦 Raw Material', '🖼️ Drawing']
 
         default_page = pages[0]
         current = st.session_state.get('page', default_page)
@@ -870,6 +871,92 @@ def page_raw_material():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Page: Drawing
+# ══════════════════════════════════════════════════════════════════════════════
+def page_drawing():
+    st.header('🖼️ Drawing')
+    role = st.session_state.user['role']
+
+    # ── Upload (non-viewer only) ───────────────────────────────────────────────
+    if role != 'viewer':
+        with st.container(border=True):
+            st.subheader('Upload Drawing')
+            uc1, uc2 = st.columns([1, 1])
+            with uc1:
+                drw_title = st.text_input('Title / Drawing No.', key='drw_title')
+                drw_asm   = st.selectbox('Assembly Mark (optional)',
+                                         [''] + db.get_marks(), key='drw_asm')
+            with uc2:
+                drw_file = st.file_uploader(
+                    'File (PDF, PNG, JPG)',
+                    type=['pdf', 'png', 'jpg', 'jpeg'],
+                    key='drw_file'
+                )
+            if st.button('📤 Upload', type='primary', use_container_width=True, key='drw_upload'):
+                if not drw_title.strip():
+                    st.error('Title is required.')
+                elif drw_file is None:
+                    st.error('Please select a file.')
+                else:
+                    db.save_drawing(
+                        drw_title, drw_asm,
+                        drw_file.name, drw_file.read(),
+                        st.session_state.user['username']
+                    )
+                    st.success(f'Uploaded: {drw_title}')
+                    st.rerun()
+
+    st.divider()
+
+    # ── Filter ────────────────────────────────────────────────────────────────
+    filter_asm = st.selectbox('Filter by Assembly', ['All'] + db.get_marks(), key='drw_filter')
+    asm_f      = None if filter_asm == 'All' else filter_asm
+    drawings   = db.get_drawings(assembly_mark=asm_f)
+
+    if not drawings:
+        st.info('No drawings uploaded yet.')
+        return
+
+    # ── Drawing list ──────────────────────────────────────────────────────────
+    for drw in drawings:
+        ext   = drw['filename'].rsplit('.', 1)[-1].lower()
+        label = f"📄 {drw['title']}"
+        if drw['assembly_mark']:
+            label += f"  ·  {drw['assembly_mark']}"
+        label += f"  ·  {drw['created_at'][:10]}"
+
+        with st.expander(label):
+            path = db.get_drawing_path(drw['filename'])
+
+            if not os.path.exists(path):
+                st.warning('File not found on server.')
+            elif ext in ('png', 'jpg', 'jpeg'):
+                st.image(path, use_container_width=True)
+            elif ext == 'pdf':
+                with open(path, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                st.markdown(
+                    f'<iframe src="data:application/pdf;base64,{b64}" '
+                    f'width="100%" height="700px" style="border:none;"></iframe>',
+                    unsafe_allow_html=True
+                )
+
+            # Download button for all types
+            with open(path, 'rb') as f:
+                st.download_button(
+                    f'📥 Download {drw["original_name"]}',
+                    f.read(), drw['original_name'],
+                    key=f'dl_{drw["id"]}',
+                    use_container_width=True
+                )
+
+            if role == 'admin':
+                if st.button('🗑 Delete', key=f'del_drw_{drw["id"]}', type='secondary'):
+                    db.delete_drawing(drw['id'])
+                    st.rerun()
+
+
 def main():
     db.init()
 
@@ -899,6 +986,8 @@ def main():
         page_delivery()
     elif '📦' in page:
         page_raw_material()
+    elif '🖼️' in page:
+        page_drawing()
     elif '⚙️' in page:
         page_manage()
 

@@ -135,6 +135,18 @@ def init():
         )
     """)
     db.commit()
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS drawings (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            title         TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            filename      TEXT NOT NULL UNIQUE,
+            assembly_mark TEXT DEFAULT '',
+            uploaded_by   TEXT DEFAULT '',
+            created_at    TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    db.commit()
     db.close()
     init_raw_materials()
     init_sessions()
@@ -1003,3 +1015,56 @@ def get_manhour_summary():
     total_mh   = sum(r['total'] * SHIFT_HOURS.get(r['shift'], 0) for r in rows)
     avg = total_mh / total_days if total_days else 0
     return {'total_manhours': total_mh, 'total_days': total_days, 'avg_per_day': avg}
+
+
+# ── Drawings ──────────────────────────────────────────────────────────────────
+
+def _drawings_dir():
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    d = os.path.join(base, 'drawings')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+def save_drawing(title, assembly_mark, original_name, file_bytes, uploaded_by=''):
+    import uuid
+    ext      = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else 'bin'
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    path     = os.path.join(_drawings_dir(), filename)
+    with open(path, 'wb') as f:
+        f.write(file_bytes)
+    c = _conn()
+    c.execute("""
+        INSERT INTO drawings (title, original_name, filename, assembly_mark, uploaded_by)
+        VALUES (?,?,?,?,?)
+    """, (title.strip(), original_name, filename, assembly_mark or '', uploaded_by))
+    c.commit()
+    c.close()
+
+def get_drawings(assembly_mark=None):
+    c = _conn()
+    if assembly_mark:
+        rows = c.execute(
+            "SELECT * FROM drawings WHERE assembly_mark=? ORDER BY created_at DESC",
+            (assembly_mark,)
+        ).fetchall()
+    else:
+        rows = c.execute("SELECT * FROM drawings ORDER BY created_at DESC").fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+def get_drawing_path(filename):
+    return os.path.join(_drawings_dir(), filename)
+
+def delete_drawing(did):
+    c = _conn()
+    row = c.execute("SELECT filename FROM drawings WHERE id=?", (did,)).fetchone()
+    if row:
+        path = get_drawing_path(row['filename'])
+        if os.path.exists(path):
+            os.remove(path)
+        c.execute("DELETE FROM drawings WHERE id=?", (did,))
+        c.commit()
+    c.close()
