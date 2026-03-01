@@ -290,14 +290,12 @@ def page_report():
     for i, s in enumerate(db.STAGES):
         with tcols[i]:
             st.metric(f'{STAGE_BADGE[s]} {s}', f'{today_by_stage[s]:,.1f} kg')
-
-    acols = st.columns(2)
-    with acols[0]:
-        st.metric('Avg/Day — Fit Up', f'{fitup_avg:,.1f} kg',
-                  f'{fitup_total_kg:,.1f} kg ÷ {fitup_days} day{"s" if fitup_days!=1 else ""}')
-    with acols[1]:
-        st.metric('Avg/Day — Welding', f'{welding_avg:,.1f} kg',
-                  f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
+            if s == 'FIT UP':
+                st.metric('Avg/Day', f'{fitup_avg:,.1f} kg',
+                          f'{fitup_total_kg:,.1f} kg ÷ {fitup_days} day{"s" if fitup_days!=1 else ""}')
+            elif s == 'WELDING':
+                st.metric('Avg/Day', f'{welding_avg:,.1f} kg',
+                          f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
     st.divider()
 
     c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
