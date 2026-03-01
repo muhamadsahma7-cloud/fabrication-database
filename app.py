@@ -271,6 +271,21 @@ def page_daily_entry():
 def page_report():
     st.header('📅 Report')
 
+    # ── Today's Activity ──────────────────────────────────────────────────────
+    today_rows = db.search_progress(start=str(date.today()), end=str(date.today()))
+    today_total = sum(r['weight_kg'] for r in today_rows)
+    today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
+                      for s in db.STAGES}
+
+    st.markdown(f"**Today's Activity** — {date.today().strftime('%d %b %Y')}")
+    tcols = st.columns(len(db.STAGES) + 1)
+    with tcols[0]:
+        st.metric('Total Today', f'{today_total:,.1f} kg')
+    for i, s in enumerate(db.STAGES):
+        with tcols[i + 1]:
+            st.metric(f'{STAGE_BADGE[s]} {s}', f'{today_by_stage[s]:,.1f} kg')
+    st.divider()
+
     c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
     with c1:
         start = st.date_input('From', value=date.today() - timedelta(days=7), key='rpt_start')
