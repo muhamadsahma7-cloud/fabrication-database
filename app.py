@@ -577,11 +577,11 @@ def page_manage():
         if st.button('📥 Import & Overwrite', type='primary', use_container_width=True,
                      disabled=uploaded is None):
             file_bytes = uploaded.read()
-            count, err = db.replace_import_excel(file_bytes)
+            part_count, prog_count, err = db.replace_import_excel(file_bytes)
             if err:
                 st.error(f'Import failed: {err}')
             else:
-                st.success(f'✅ Imported {count} parts. All progress records preserved.')
+                st.success(f'✅ Imported {part_count} parts and {prog_count} progress records.')
 
 
     # ── Export ────────────────────────────────────────────────────────────────
