@@ -576,18 +576,12 @@ def page_manage():
         uploaded = st.file_uploader('Choose Excel file (.xlsx)', type=['xlsx', 'xls'])
         if st.button('📥 Import & Overwrite', type='primary', use_container_width=True,
                      disabled=uploaded is None):
-            import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-                tmp.write(uploaded.read())
-                tmp_path = tmp.name
-            try:
-                count, err = db.replace_import_excel(tmp_path)
-                if err:
-                    st.error(f'Import failed: {err}')
-                else:
-                    st.success(f'✅ Imported {count} parts. All progress records preserved.')
-            finally:
-                os.unlink(tmp_path)
+            file_bytes = uploaded.read()
+            count, err = db.replace_import_excel(file_bytes)
+            if err:
+                st.error(f'Import failed: {err}')
+            else:
+                st.success(f'✅ Imported {count} parts. All progress records preserved.')
 
 
     # ── Export ────────────────────────────────────────────────────────────────
@@ -783,20 +777,14 @@ def page_raw_material():
                                             key='rm_upload')
                 if st.button('📥 Import', type='primary', use_container_width=True,
                              disabled=uploaded is None):
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-                        tmp.write(uploaded.read())
-                        tmp_path = tmp.name
-                    try:
-                        count, err = db.import_raw_materials_excel(tmp_path)
-                        if err:
-                            st.error(f'Import failed: {err}')
-                        else:
-                            st.success(f'Imported {count} records.')
-                            st.session_state.rm_rows = []
-                            st.rerun()
-                    finally:
-                        os.unlink(tmp_path)
+                    file_bytes = uploaded.read()
+                    count, err = db.import_raw_materials_excel(file_bytes)
+                    if err:
+                        st.error(f'Import failed: {err}')
+                    else:
+                        st.success(f'Imported {count} records.')
+                        st.session_state.rm_rows = []
+                        st.rerun()
 
     st.markdown('---')
 

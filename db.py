@@ -306,14 +306,18 @@ def _reorder_raw_materials():
     c.commit()
     c.close()
 
-def import_raw_materials_excel(path):
+def import_raw_materials_excel(file_source):
     """Import raw materials from Excel.
+    file_source can be a file path (str) or bytes/BytesIO object.
     Expected columns (row 1 header): Received Date, D.O. Number, Description, Grade, Qty, Remark
     Returns (count, error_message). error_message is None on success.
     """
     try:
         import openpyxl
-        wb = openpyxl.load_workbook(path, data_only=True)
+        from io import BytesIO as _BytesIO
+        if isinstance(file_source, (bytes, bytearray)):
+            file_source = _BytesIO(file_source)
+        wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
         # find header row by looking for 'Description' or 'Received Date'
@@ -365,19 +369,23 @@ def import_raw_materials_excel(path):
     except Exception as e:
         return 0, str(e)
 
-def replace_import_excel(path):
-    """Clear all parts & assemblies (keeps progress), then reimport from Excel."""
+def replace_import_excel(file_source):
+    """Clear all parts & assemblies (keeps progress), then reimport from Excel.
+    file_source can be a file path (str) or bytes/BytesIO object."""
     c = _conn()
     c.execute("DELETE FROM parts")
     c.execute("DELETE FROM assemblies")
     c.commit()
     c.close()
-    return import_excel(path)
+    return import_excel(file_source)
 
-def import_excel(path):
+def import_excel(file_source):
     try:
         import openpyxl
-        wb = openpyxl.load_workbook(path, data_only=True)
+        from io import BytesIO as _BytesIO
+        if isinstance(file_source, (bytes, bytearray)):
+            file_source = _BytesIO(file_source)
+        wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
         header_row = next((i for i, r in enumerate(rows) if r and r[0] == 'Assembly Mark'), None)
