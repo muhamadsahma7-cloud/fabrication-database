@@ -447,10 +447,11 @@ def import_excel(file_source):
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
             part_count += 1
 
-            # Collect progress data from stage columns
+            # Collect progress data — keyed by (assembly_mark, stage) only,
+            # because the Excel kg column is assembly-level, not per sub-assembly.
             for stage, kg_col, date_col in stage_cols:
                 kg = _float(_get(row, kg_col, default=0))
-                if kg > 0:
+                if kg > 0 and (asm, stage) not in progress_map:
                     raw_date = _get(row, date_col, default=None)
                     if raw_date and hasattr(raw_date, 'strftime'):
                         date_str = raw_date.strftime('%Y-%m-%d')
@@ -458,7 +459,7 @@ def import_excel(file_source):
                         date_str = str(raw_date).strip()[:10]
                     else:
                         date_str = str(date.today())
-                    progress_map[(asm, sub, stage)] = (kg, date_str)
+                    progress_map[(asm, stage)] = (kg, date_str)
 
         for asm, wt in asm_weights.items():
             db.execute(
@@ -468,17 +469,17 @@ def import_excel(file_source):
                 (asm, wt)
             )
 
-        # Import progress records (delete existing for same asm+sub+stage first)
+        # Import progress records — one per (assembly_mark, stage)
         prog_count = 0
-        for (asm, sub, stage), (kg, date_str) in progress_map.items():
+        for (asm, stage), (kg, date_str) in progress_map.items():
             db.execute(
-                "DELETE FROM progress WHERE assembly_mark=? AND sub_assembly_mark=? AND stage=?",
-                (asm, sub, stage)
+                "DELETE FROM progress WHERE assembly_mark=? AND sub_assembly_mark='' AND stage=?",
+                (asm, stage)
             )
             db.execute(
                 "INSERT INTO progress (entry_date, assembly_mark, sub_assembly_mark, stage, weight_kg) "
                 "VALUES (?,?,?,?,?)",
-                (date_str, asm, sub, stage, kg)
+                (date_str, asm, '', stage, kg)
             )
             prog_count += 1
 
