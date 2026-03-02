@@ -447,11 +447,10 @@ def import_excel(file_source):
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
             part_count += 1
 
-            # Collect progress data — keyed by (assembly_mark, stage) only,
-            # because the Excel kg column is assembly-level, not per sub-assembly.
+            # Collect progress data — sum per-part kg values per (assembly, stage).
             for stage, kg_col, date_col in stage_cols:
                 kg = _float(_get(row, kg_col, default=0))
-                if kg > 0 and (asm, stage) not in progress_map:
+                if kg > 0:
                     raw_date = _get(row, date_col, default=None)
                     if raw_date and hasattr(raw_date, 'strftime'):
                         date_str = raw_date.strftime('%Y-%m-%d')
@@ -459,7 +458,11 @@ def import_excel(file_source):
                         date_str = str(raw_date).strip()[:10]
                     else:
                         date_str = str(date.today())
-                    progress_map[(asm, stage)] = (kg, date_str)
+                    if (asm, stage) in progress_map:
+                        prev_kg, prev_date = progress_map[(asm, stage)]
+                        progress_map[(asm, stage)] = (prev_kg + kg, prev_date)
+                    else:
+                        progress_map[(asm, stage)] = (kg, date_str)
 
         for asm, wt in asm_weights.items():
             db.execute(
