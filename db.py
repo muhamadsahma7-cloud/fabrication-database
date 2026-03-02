@@ -4,7 +4,7 @@ from datetime import date
 STAGES = ['FIT UP', 'WELDING', 'BLASTING & PAINTING', 'SEND TO SITE']
 
 WORKER_TYPES = [
-    'Cutting Man', 'Supervisor', 'Foremen', 'Fitter',
+    'Cutting Man', 'Supervisor', 'Foremen', 'Fitter', 'Welder',
     'Helper', 'Semi Skill', 'Material Coordinator', 'Material Handler',
 ]
 SHIFT_LABELS = ['Regular', 'OT→6:30', 'OT→7:30', 'OT→10:00', 'Sun/PH']
