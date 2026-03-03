@@ -967,11 +967,7 @@ def main():
         st.error(f"⚠️ Missing Streamlit secret: **{e}**")
         st.info("Go to Streamlit Cloud → your app → ⋮ Settings → **Secrets** and add:\n\n"
                 "```toml\n"
-                "db_host     = \"db.fwynwlagixbisxybdgya.supabase.co\"\n"
-                "db_port     = 5432\n"
-                "db_name     = \"postgres\"\n"
-                "db_user     = \"postgres\"\n"
-                "db_password = \"5@5wsHgUiWwgyF5\"\n"
+                'database_url = "postgresql://postgres:5%405wsHgUiWwgyF5@db.fwynwlagixbisxybdgya.supabase.co:5432/postgres?sslmode=require"\n'
                 "```")
         st.stop()
     except Exception as e:

@@ -56,14 +56,8 @@ class _DBConn:
 
 def _conn():
     import streamlit as st
-    conn = psycopg2.connect(
-        host=st.secrets['db_host'],
-        port=int(st.secrets.get('db_port', 5432)),
-        dbname=st.secrets['db_name'],
-        user=st.secrets['db_user'],
-        password=st.secrets['db_password'],
-        sslmode='require',
-    )
+    url = st.secrets['database_url']
+    conn = psycopg2.connect(url)
     return _DBConn(conn)
 
 
