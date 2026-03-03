@@ -54,10 +54,11 @@ div[data-testid="metric-container"] {
 # Login
 # ══════════════════════════════════════════════════════════════════════════════
 def show_login():
+    project_name = db.get_project_name()
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
         st.markdown('<br>', unsafe_allow_html=True)
-        st.markdown(f'## 🏗️ Fabrication Tracker')
+        st.markdown(f'## 🏗️ {project_name}')
         st.caption(APP_VERSION)
         st.divider()
         with st.form('login_form'):
@@ -86,8 +87,9 @@ def show_login():
 # ══════════════════════════════════════════════════════════════════════════════
 def show_sidebar():
     user = st.session_state.user
+    project_name = db.get_project_name()
     with st.sidebar:
-        st.markdown(f'### 🏗️ Fabrication Tracker')
+        st.markdown(f'### 🏗️ {project_name}')
         st.caption(APP_VERSION)
         st.divider()
         role_labels = {'admin': 'Administrator', 'user': 'User', 'viewer': 'Viewer (QC)'}
@@ -529,8 +531,8 @@ def page_delivery():
 def page_manage():
     st.header('⚙️ Manage Data')
 
-    tab_import, tab_export, tab_users, tab_online, tab_danger = st.tabs(
-        ['📥 Import Excel', '📤 Export Master', '👥 Users', '🟢 Online', '⚠️ Danger Zone'])
+    tab_import, tab_export, tab_users, tab_online, tab_settings, tab_danger = st.tabs(
+        ['📥 Import Excel', '📤 Export Master', '👥 Users', '🟢 Online', '⚙️ Settings', '⚠️ Danger Zone'])
 
     # ── Import ────────────────────────────────────────────────────────────────
     with tab_import:
@@ -693,6 +695,21 @@ def page_manage():
             st.dataframe(df_h, use_container_width=True, hide_index=True)
         else:
             st.info('No login history yet.')
+
+    # ── Settings ──────────────────────────────────────────────────────────────
+    with tab_settings:
+        st.subheader('Project Settings')
+        current_name = db.get_project_name()
+        with st.form('project_name_form'):
+            new_name = st.text_input('Project Name', value=current_name,
+                                     placeholder='e.g. Ulu Tiram Station Fabrication')
+            if st.form_submit_button('💾 Save Project Name', type='primary'):
+                if new_name.strip():
+                    db.set_project_name(new_name)
+                    st.success(f'Project name updated to: **{new_name.strip()}**')
+                    st.rerun()
+                else:
+                    st.error('Project name cannot be empty.')
 
     # ── Danger Zone ───────────────────────────────────────────────────────────
     with tab_danger:

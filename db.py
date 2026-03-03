@@ -200,9 +200,35 @@ def init():
     db.execute("ALTER TABLE drawings ADD COLUMN IF NOT EXISTS file_data BYTEA")
     db.commit()
 
+    # Project settings table
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT DEFAULT ''
+        )
+    """)
+    db.commit()
+
     db.close()
     init_raw_materials()
     init_sessions()
+
+
+def get_project_name():
+    c = _conn()
+    row = c.execute("SELECT value FROM settings WHERE key='project_name'").fetchone()
+    c.close()
+    return row['value'] if row else 'Fabrication Tracker'
+
+
+def set_project_name(name):
+    c = _conn()
+    c.execute("""
+        INSERT INTO settings (key, value) VALUES ('project_name', ?)
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value
+    """, (name.strip(),))
+    c.commit()
+    c.close()
 
 
 def _hash(password):
