@@ -143,7 +143,9 @@ def page_daily_entry():
             mark = st.selectbox('Assembly Mark', [''] + marks, key='entry_mark')
 
             subs = db.get_sub_assemblies(mark) if mark else []
-            sub  = st.selectbox('Sub-Assembly Mark', [''] + subs, key='entry_sub')
+            subs_selected = st.multiselect(
+                'Sub-Assembly Mark', subs, key='entry_sub',
+                placeholder='Select one or more (empty = whole assembly)')
 
             st.write('**Stage**')
             stage_cols = st.columns(2)
@@ -170,29 +172,45 @@ def page_daily_entry():
                     st.rerun()
             stage = st.session_state.sel_stage
 
-            # Auto weight
-            weight_val = 0.0
-            if mark:
-                all_parts = db.get_parts(mark)
-                parts = [p for p in all_parts if p['sub_assembly_mark'] == sub] if sub else all_parts
-                weight_val = sum(p['total_weight_kg'] for p in parts)
+            # Auto weight per sub-assembly from parts table
+            all_parts = db.get_parts(mark) if mark else []
+            def _sub_weight(s):
+                pts = [p for p in all_parts if p['sub_assembly_mark'] == s] if s else all_parts
+                return round(sum(p['total_weight_kg'] for p in pts), 2)
 
-            weight  = st.number_input('Weight (kg)', value=weight_val, min_value=0.0, format='%.2f')
+            if len(subs_selected) >= 2:
+                # Multiple subs — auto-calc each, no single override field
+                weights_map = {s: _sub_weight(s) for s in subs_selected}
+                total_w = sum(weights_map.values())
+                st.caption(f"Auto weight: **{total_w:,.2f} kg** total "
+                           f"across {len(subs_selected)} sub-assemblies")
+            else:
+                # 0 or 1 sub — show editable weight field
+                s0 = subs_selected[0] if subs_selected else ''
+                weight_val = _sub_weight(s0) if mark else 0.0
+                weight = st.number_input('Weight (kg)', value=weight_val, min_value=0.0, format='%.2f')
+                weights_map = {s0: weight}
+
             qty     = st.number_input('Qty', value=1, min_value=0, step=1)
             do_no   = ''
             if stage in ('BLASTING & PAINTING', 'SEND TO SITE'):
                 do_no = st.text_input('D.O. Number *', placeholder='Required for this stage')
             remarks = st.text_area('Remarks', height=70)
 
-            # Live duplicate warning — shown before the button is pressed
+            # Live duplicate warning — check every selected sub
             if mark:
-                _completed     = db.get_completed_stages(mark, sub or '')
-                _queued_stages = {e['stage'] for e in st.session_state.queue
-                                  if e['mark'] == mark.upper() and e['sub'] == (sub or '').upper()}
-                if stage in _completed:
-                    st.warning(f'⚠️ [{stage}] already recorded for this assembly/sub-assembly.')
-                elif stage in _queued_stages:
-                    st.warning(f'⚠️ [{stage}] already in the queue for this assembly/sub-assembly.')
+                check_subs  = subs_selected if subs_selected else ['']
+                warn_done   = [s for s in check_subs
+                               if stage in db.get_completed_stages(mark, s)]
+                warn_queued = [s for s in check_subs
+                               if stage in {e['stage'] for e in st.session_state.queue
+                                            if e['mark'] == mark.upper() and e['sub'] == s.upper()}]
+                if warn_done:
+                    st.warning(f'⚠️ [{stage}] already recorded for: '
+                               f'{", ".join(s or mark for s in warn_done)}')
+                elif warn_queued:
+                    st.warning(f'⚠️ [{stage}] already in queue for: '
+                               f'{", ".join(s or mark for s in warn_queued)}')
 
             if st.button('➕ Add to Queue', type='primary', use_container_width=True):
                 errors = []
@@ -200,34 +218,42 @@ def page_daily_entry():
                     errors.append('Assembly Mark is required.')
                 if stage in ('BLASTING & PAINTING', 'SEND TO SITE') and not do_no.strip():
                     errors.append(f'D.O. Number is required for [{stage}].')
+
+                check_subs = subs_selected if subs_selected else ['']
+
                 if mark and not errors:
-                    stage_idx     = db.STAGES.index(stage)
-                    completed     = db.get_completed_stages(mark, sub or '')
-                    queued_stages = {e['stage'] for e in st.session_state.queue
-                                     if e['mark'] == mark.upper() and e['sub'] == (sub or '').upper()}
-                    if stage in completed:
-                        errors.append(f'[{stage}] has already been recorded for this assembly/sub-assembly.')
-                    elif stage in queued_stages:
-                        errors.append(f'[{stage}] is already in the queue for this assembly/sub-assembly.')
-                    elif stage_idx > 0:
-                        prev_stage = db.STAGES[stage_idx - 1]
-                        if prev_stage not in completed and prev_stage not in queued_stages:
-                            errors.append(f'"{prev_stage}" must be completed before [{stage}].')
+                    stage_idx = db.STAGES.index(stage)
+                    for s in check_subs:
+                        completed     = db.get_completed_stages(mark, s)
+                        queued_stages = {e['stage'] for e in st.session_state.queue
+                                         if e['mark'] == mark.upper() and e['sub'] == s.upper()}
+                        label = s if s else mark
+                        if stage in completed:
+                            errors.append(f'[{stage}] already recorded for {label}.')
+                        elif stage in queued_stages:
+                            errors.append(f'[{stage}] already in queue for {label}.')
+                        elif stage_idx > 0:
+                            prev_stage = db.STAGES[stage_idx - 1]
+                            if prev_stage not in completed and prev_stage not in queued_stages:
+                                errors.append(f'{label}: "{prev_stage}" must be completed first.')
+
                 if errors:
                     for e in errors:
                         st.error(e)
                 else:
-                    st.session_state.queue.append({
-                        'date':    str(entry_date),
-                        'mark':    mark.upper(),
-                        'sub':     (sub or '').upper(),
-                        'stage':   stage,
-                        'weight':  round(weight, 2),
-                        'qty':     int(qty),
-                        'do_no':   do_no.strip(),
-                        'remarks': remarks.strip(),
-                    })
-                    st.success(f'Added: {mark} — {stage}')
+                    for s in check_subs:
+                        st.session_state.queue.append({
+                            'date':    str(entry_date),
+                            'mark':    mark.upper(),
+                            'sub':     s.upper(),
+                            'stage':   stage,
+                            'weight':  weights_map.get(s, 0.0),
+                            'qty':     int(qty),
+                            'do_no':   do_no.strip(),
+                            'remarks': remarks.strip(),
+                        })
+                    n = len(check_subs)
+                    st.success(f'Added {n} item{"s" if n > 1 else ""} to queue.')
                     st.rerun()
 
     # ── Right: Queue + Saved ──────────────────────────────────────────────────
