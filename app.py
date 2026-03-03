@@ -404,6 +404,17 @@ def page_report():
                   if mh['total_days'] else None)
     with mh_cols[2]:
         st.metric('Total Manhours', f"{mh['total_manhours']:,.1f} hrs")
+
+    # Workfront kg = raw material total kg received × 90% − total FIT UP done
+    rm_total_kg  = db.get_raw_material_summary().get('total_kg', 0) or 0
+    fitup_total  = fitup_stats['total_kg']
+    workfront_kg = rm_total_kg * 0.90 - fitup_total
+    wf_cols = st.columns(3)
+    with wf_cols[0]:
+        st.metric('Raw Material Received', f'{rm_total_kg:,.1f} kg')
+    with wf_cols[1]:
+        st.metric('Workfront kg', f'{workfront_kg:,.1f} kg',
+                  f'{rm_total_kg:,.1f} × 90% − {fitup_total:,.1f} FIT UP')
     st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)
