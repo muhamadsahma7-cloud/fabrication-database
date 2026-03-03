@@ -944,7 +944,27 @@ def page_drawing():
 
 
 def main():
-    db.init()
+    try:
+        db.init()
+    except KeyError as e:
+        st.error(f"⚠️ Missing Streamlit secret: **{e}**")
+        st.info("Go to Streamlit Cloud → your app → ⋮ Settings → **Secrets** and add:\n\n"
+                "```toml\n"
+                "db_host     = \"db.fwynwlagixbisxybdgya.supabase.co\"\n"
+                "db_port     = 5432\n"
+                "db_name     = \"postgres\"\n"
+                "db_user     = \"postgres\"\n"
+                "db_password = \"5@5wsHgUiWwgyF5\"\n"
+                "```")
+        st.stop()
+    except Exception as e:
+        st.error("⚠️ Cannot connect to database.")
+        st.info("**Possible causes:**\n"
+                "- Supabase free-tier project is **paused** — go to [supabase.com](https://supabase.com) "
+                "→ your project → click **Restore** to wake it\n"
+                "- Wrong credentials in Streamlit secrets\n\n"
+                f"Technical detail: `{type(e).__name__}: {e}`")
+        st.stop()
 
     if 'user' not in st.session_state:
         show_login()
