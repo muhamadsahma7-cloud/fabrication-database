@@ -911,14 +911,14 @@ def get_master_export():
             p.profile2             AS "Profile 2",
             p.grade                AS "Grade",
             p.remark               AS "Remark",
-            CASE WHEN pr.fitup_done    THEN p.total_weight_kg ELSE 0 END AS "FIT UP (kg)",
-            pr.fitup_dates                                               AS "FIT UP Date",
-            CASE WHEN pr.welding_done  THEN p.total_weight_kg ELSE 0 END AS "WELDING (kg)",
-            pr.welding_dates                                             AS "WELDING Date",
-            CASE WHEN pr.blasting_done THEN p.total_weight_kg ELSE 0 END AS "BLASTING & PAINTING (kg)",
-            pr.blasting_dates                                            AS "BLASTING & PAINTING Date",
-            CASE WHEN pr.sendsite_done THEN p.total_weight_kg ELSE 0 END AS "SEND TO SITE (kg)",
-            pr.sendsite_dates                                            AS "SEND TO SITE Date"
+            CASE WHEN pr.fitup_done    = 1 THEN p.total_weight_kg ELSE 0 END AS "FIT UP (kg)",
+            pr.fitup_dates                                                   AS "FIT UP Date",
+            CASE WHEN pr.welding_done  = 1 THEN p.total_weight_kg ELSE 0 END AS "WELDING (kg)",
+            pr.welding_dates                                                 AS "WELDING Date",
+            CASE WHEN pr.blasting_done = 1 THEN p.total_weight_kg ELSE 0 END AS "BLASTING & PAINTING (kg)",
+            pr.blasting_dates                                                AS "BLASTING & PAINTING Date",
+            CASE WHEN pr.sendsite_done = 1 THEN p.total_weight_kg ELSE 0 END AS "SEND TO SITE (kg)",
+            pr.sendsite_dates                                                AS "SEND TO SITE Date"
         FROM parts p
         LEFT JOIN (
             SELECT
