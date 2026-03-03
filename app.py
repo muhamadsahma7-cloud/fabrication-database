@@ -27,10 +27,10 @@ STAGE_BADGE = {
     'SEND TO SITE':        '🟠',
 }
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=120, show_spinner=False)
 def _get_marks():
     """Assembly mark list cached for 2 min — avoids a DB round-trip on every rerun."""
-    return _get_marks()
+    return db.get_marks()
 
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
