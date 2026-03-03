@@ -409,6 +409,7 @@ def page_report():
     rm_total_kg  = db.get_raw_material_summary().get('total_kg', 0) or 0
     fitup_total  = fitup_stats['total_kg']
     workfront_kg = rm_total_kg * 0.90 - fitup_total
+    st.divider()
     st.markdown('**Workfront**')
     wf_cols = st.columns(2)
     with wf_cols[0]:
