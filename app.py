@@ -1109,7 +1109,7 @@ def page_drawing():
                         type='primary',
                     )
 
-            if role == 'admin':
+            if role != 'viewer':
                 if st.button('🗑 Delete', key=f'del_drw_{drw["id"]}', type='secondary'):
                     db.delete_drawing(drw['id'])
                     st.rerun()
