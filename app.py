@@ -1121,8 +1121,8 @@ def page_drawing():
 
 
 @st.cache_resource(show_spinner='Connecting to database…')
-def _init_db():
-    """Run schema init once per server lifecycle, not on every rerun."""
+def _init_db(_schema_v=4):
+    """Run schema init once per server lifecycle. Increment _schema_v to bust cache."""
     db.init()
 
 
