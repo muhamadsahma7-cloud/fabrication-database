@@ -54,7 +54,7 @@ div[data-testid="metric-container"] {
 # Login
 # ══════════════════════════════════════════════════════════════════════════════
 def show_login():
-    project_name = db.get_project_name()
+    project_name = st.session_state.get('project_name', 'Fabrication Tracker')
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
         st.markdown('<br>', unsafe_allow_html=True)
@@ -87,7 +87,7 @@ def show_login():
 # ══════════════════════════════════════════════════════════════════════════════
 def show_sidebar():
     user = st.session_state.user
-    project_name = db.get_project_name()
+    project_name = st.session_state.get('project_name', 'Fabrication Tracker')
     with st.sidebar:
         st.markdown(f'### 🏗️ {project_name}')
         st.caption(APP_VERSION)
@@ -699,13 +699,14 @@ def page_manage():
     # ── Settings ──────────────────────────────────────────────────────────────
     with tab_settings:
         st.subheader('Project Settings')
-        current_name = db.get_project_name()
+        current_name = st.session_state.get('project_name', 'Fabrication Tracker')
         with st.form('project_name_form'):
             new_name = st.text_input('Project Name', value=current_name,
                                      placeholder='e.g. Ulu Tiram Station Fabrication')
             if st.form_submit_button('💾 Save Project Name', type='primary'):
                 if new_name.strip():
                     db.set_project_name(new_name)
+                    st.session_state.project_name = new_name.strip()
                     st.success(f'Project name updated to: **{new_name.strip()}**')
                     st.rerun()
                 else:
@@ -960,14 +961,20 @@ def page_drawing():
                     st.rerun()
 
 
+@st.cache_resource(show_spinner='Connecting to database…')
+def _init_db():
+    """Run schema init once per server lifecycle, not on every rerun."""
+    db.init()
+
+
 def main():
     try:
-        db.init()
+        _init_db()
     except KeyError as e:
         st.error(f"⚠️ Missing Streamlit secret: **{e}**")
         st.info("Go to Streamlit Cloud → your app → ⋮ Settings → **Secrets** and add:\n\n"
                 "```toml\n"
-                'database_url = "postgresql://postgres:5%405wsHgUiWwgyF5@db.fwynwlagixbisxybdgya.supabase.co:5432/postgres?sslmode=require"\n'
+                'database_url = "postgresql://postgres.fwynwlagixbisxybdgya:5%405wsHgUiWwgyF5@aws-1-ap-southeast-2.pooler.supabase.com:5432/postgres?sslmode=require"\n'
                 "```")
         st.stop()
     except Exception as e:
@@ -978,6 +985,10 @@ def main():
                 "- Wrong credentials in Streamlit secrets\n\n"
                 f"Technical detail: `{type(e).__name__}: {e}`")
         st.stop()
+
+    # Cache project name in session state — avoids a DB hit on every rerun
+    if 'project_name' not in st.session_state:
+        st.session_state.project_name = db.get_project_name()
 
     if 'user' not in st.session_state:
         show_login()
