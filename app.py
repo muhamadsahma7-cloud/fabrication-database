@@ -394,6 +394,8 @@ def page_report():
         for shifts in today_grid.values()
         for sk, count in shifts.items()
     )
+    st.divider()
+    st.markdown('**Manhours**')
     mh_cols = st.columns(3)
     with mh_cols[0]:
         st.metric("Today's Manhours", f"{today_mh:,.1f} hrs")
