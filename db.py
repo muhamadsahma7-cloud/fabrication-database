@@ -598,11 +598,13 @@ def import_excel(file_source):
         prog_rows  = [(ds, asm, sub, stg, kg) for (asm, sub, stg), (kg, ds) in progress_map.items()]
         prog_count = 0
         if prog_rows:
+            # Delete by (assembly_mark, stage) only — no sub filter — so old records
+            # from previous imports (stored with sub='') are also removed.
+            asm_stage_pairs = list({(asm, stg) for asm, sub, stg in progress_map})
             psycopg2.extras.execute_values(
                 cur,
-                "DELETE FROM progress "
-                "WHERE (assembly_mark, sub_assembly_mark, stage) IN (VALUES %s)",
-                [(asm, sub, stg) for asm, sub, stg in progress_map],
+                "DELETE FROM progress WHERE (assembly_mark, stage) IN (VALUES %s)",
+                asm_stage_pairs,
             )
             raw.commit()
             psycopg2.extras.execute_values(
