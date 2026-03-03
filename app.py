@@ -409,13 +409,11 @@ def page_report():
     rm_total_kg  = db.get_raw_material_summary().get('total_kg', 0) or 0
     fitup_total  = fitup_stats['total_kg']
     workfront_kg = rm_total_kg * 0.90 - fitup_total
-    wf_cols = st.columns(3)
+    wf_cols = st.columns(2)
     with wf_cols[0]:
-        st.metric('Raw Material Received', f'{rm_total_kg:,.1f} kg')
-    with wf_cols[1]:
         st.metric('FIT UP Workfront kg', f'{workfront_kg:,.1f} kg',
                   f'{rm_total_kg:,.1f} × 90% − {fitup_total:,.1f} FIT UP')
-    with wf_cols[2]:
+    with wf_cols[1]:
         weld_total = weld_stats['total_kg']
         welding_workfront_kg = fitup_total - weld_total
         st.metric('Welding Workfront kg', f'{welding_workfront_kg:,.1f} kg',
