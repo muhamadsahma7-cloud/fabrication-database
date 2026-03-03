@@ -1018,30 +1018,44 @@ def page_drawing():
     # ── Upload (non-viewer only) ───────────────────────────────────────────────
     if role != 'viewer':
         with st.container(border=True):
-            st.subheader('Upload Drawing')
-            uc1, uc2 = st.columns([1, 1])
+            st.subheader('Upload Drawings')
+            uc1, uc2, uc3 = st.columns([1, 1, 1.5])
             with uc1:
-                drw_title = st.text_input('Title / Drawing No.', key='drw_title')
-                drw_asm   = st.selectbox('Assembly Mark (optional)',
-                                         [''] + db.get_marks(), key='drw_asm')
+                drw_rev  = st.text_input('Rev No.', key='drw_rev', placeholder='e.g. A, B, C1')
             with uc2:
-                drw_file = st.file_uploader(
-                    'File (PDF, PNG, JPG)',
-                    type=['pdf', 'png', 'jpg', 'jpeg'],
-                    key='drw_file'
-                )
-            if st.button('📤 Upload', type='primary', use_container_width=True, key='drw_upload'):
-                if not drw_title.strip():
-                    st.error('Title is required.')
-                elif drw_file is None:
-                    st.error('Please select a file.')
+                drw_date = st.date_input('Date Received', value=date.today(), key='drw_date')
+            with uc3:
+                drw_asm  = st.selectbox('Assembly Mark (optional)',
+                                        [''] + db.get_marks(), key='drw_asm')
+
+            drw_files = st.file_uploader(
+                'Files (PDF, PNG, JPG) — select one or multiple',
+                type=['pdf', 'png', 'jpg', 'jpeg'],
+                accept_multiple_files=True,
+                key='drw_file'
+            )
+
+            if drw_files:
+                preview = [{'Title (auto)': f.name.rsplit('.', 1)[0], 'File': f.name}
+                           for f in drw_files]
+                st.caption(f'{len(drw_files)} file(s) selected — titles taken from filenames:')
+                st.dataframe(preview, use_container_width=True, hide_index=True)
+
+            if st.button('📤 Upload All', type='primary', use_container_width=True, key='drw_upload'):
+                if not drw_files:
+                    st.error('Please select at least one file.')
                 else:
-                    db.save_drawing(
-                        drw_title, drw_asm,
-                        drw_file.name, drw_file.read(),
-                        st.session_state.user['username']
-                    )
-                    st.success(f'Uploaded: {drw_title}')
+                    for f in drw_files:
+                        title = f.name.rsplit('.', 1)[0]   # filename without extension
+                        db.save_drawing(
+                            title, drw_asm,
+                            f.name, f.read(),
+                            st.session_state.user['username'],
+                            drw_rev.strip(),
+                            str(drw_date),
+                        )
+                    n = len(drw_files)
+                    st.success(f'Uploaded {n} drawing{"s" if n > 1 else ""}.')
                     st.rerun()
 
     st.divider()
@@ -1059,11 +1073,24 @@ def page_drawing():
     for drw in drawings:
         ext   = drw['original_name'].rsplit('.', 1)[-1].lower() if '.' in drw['original_name'] else ''
         label = f"📄 {drw['title']}"
+        if drw.get('rev_no'):
+            label += f"  ·  Rev {drw['rev_no']}"
+        if drw.get('date_received'):
+            label += f"  ·  {drw['date_received']}"
         if drw['assembly_mark']:
             label += f"  ·  {drw['assembly_mark']}"
-        label += f"  ·  {str(drw['created_at'])[:10]}"
 
         with st.expander(label):
+            meta_parts = []
+            if drw.get('rev_no'):
+                meta_parts.append(f"**Rev:** {drw['rev_no']}")
+            if drw.get('date_received'):
+                meta_parts.append(f"**Date Received:** {drw['date_received']}")
+            if drw.get('assembly_mark'):
+                meta_parts.append(f"**Assembly:** {drw['assembly_mark']}")
+            if meta_parts:
+                st.caption('  ·  '.join(meta_parts))
+
             file_bytes = bytes(drw['file_data']) if drw.get('file_data') else None
 
             if not file_bytes:

@@ -211,6 +211,8 @@ def init():
         )
     """)
     db.execute("ALTER TABLE drawings ADD COLUMN IF NOT EXISTS file_data BYTEA")
+    db.execute("ALTER TABLE drawings ADD COLUMN IF NOT EXISTS rev_no TEXT DEFAULT ''")
+    db.execute("ALTER TABLE drawings ADD COLUMN IF NOT EXISTS date_received TEXT DEFAULT ''")
     db.commit()
 
     # Project settings table
@@ -1235,16 +1237,16 @@ def get_manhour_summary():
 
 # ── Drawings (stored as BYTEA in database) ─────────────────────────────────────
 
-def save_drawing(title, assembly_mark, original_name, file_bytes, uploaded_by=''):
+def save_drawing(title, assembly_mark, original_name, file_bytes, uploaded_by='', rev_no='', date_received=''):
     import uuid
     ext      = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else 'bin'
     filename = f"{uuid.uuid4().hex}.{ext}"
     c = _conn()
     c.execute("""
-        INSERT INTO drawings (title, original_name, filename, assembly_mark, uploaded_by, file_data)
-        VALUES (?,?,?,?,?,?)
+        INSERT INTO drawings (title, original_name, filename, assembly_mark, uploaded_by, file_data, rev_no, date_received)
+        VALUES (?,?,?,?,?,?,?,?)
     """, (title.strip(), original_name, filename, assembly_mark or '', uploaded_by,
-          psycopg2.Binary(file_bytes)))
+          psycopg2.Binary(file_bytes), rev_no or '', date_received or ''))
     c.commit()
     c.close()
 
