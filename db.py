@@ -522,7 +522,7 @@ def import_excel(file_source):
         asm_set      = set()
         parts_rows   = []          # list of 12-tuples for bulk INSERT
         asm_weights  = {}          # asm -> total kg
-        progress_map = {}          # (asm, stage) -> (total_kg, date_str)
+        progress_map = {}          # (asm, sub, stage) -> (total_kg, date_str)
 
         for row in rows[header_row + 1:]:
             if not row or not _get(row, 'Assembly Mark'):
@@ -557,11 +557,11 @@ def import_excel(file_source):
                         date_str = str(raw_date).strip()[:10]
                     else:
                         date_str = str(date.today())
-                    if (asm, stage) in progress_map:
-                        prev_kg, prev_date = progress_map[(asm, stage)]
-                        progress_map[(asm, stage)] = (prev_kg + kg, prev_date)
+                    if (asm, sub, stage) in progress_map:
+                        prev_kg, prev_date = progress_map[(asm, sub, stage)]
+                        progress_map[(asm, sub, stage)] = (prev_kg + kg, prev_date)
                     else:
-                        progress_map[(asm, stage)] = (kg, date_str)
+                        progress_map[(asm, sub, stage)] = (kg, date_str)
 
         if not parts_rows:
             return 0, 0, "No valid data rows found."
@@ -594,14 +594,15 @@ def import_excel(file_source):
             raw.commit()
 
         # 3. Progress — single DELETE + single INSERT
-        prog_rows  = [(ds, asm, '', stg, kg) for (asm, stg), (kg, ds) in progress_map.items()]
+        # Key includes sub so each sub-assembly gets its own record (export JOIN works)
+        prog_rows  = [(ds, asm, sub, stg, kg) for (asm, sub, stg), (kg, ds) in progress_map.items()]
         prog_count = 0
         if prog_rows:
             psycopg2.extras.execute_values(
                 cur,
                 "DELETE FROM progress "
-                "WHERE (assembly_mark, stage) IN (VALUES %s) AND sub_assembly_mark = ''",
-                [(asm, stg) for asm, stg in progress_map],
+                "WHERE (assembly_mark, sub_assembly_mark, stage) IN (VALUES %s)",
+                [(asm, sub, stg) for asm, sub, stg in progress_map],
             )
             raw.commit()
             psycopg2.extras.execute_values(
