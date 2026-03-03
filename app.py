@@ -2,7 +2,7 @@ import streamlit as st
 import db
 import pandas as pd
 import base64
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 
 APP_VERSION = 'v1.0.0'
@@ -733,17 +733,93 @@ def page_manage():
         rows = db.get_master_export()
         if rows:
             df = pd.DataFrame(rows)
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            # ── Styled Excel ──────────────────────────────────────────────────
+            import openpyxl as _xl
+            from openpyxl.styles import (Font as _Font, PatternFill as _Fill,
+                                         Alignment as _Align, Border as _Border,
+                                         Side as _Side)
+
+            exp_wb = _xl.Workbook()
+            exp_ws = exp_wb.active
+            exp_ws.title = 'Master Database'
+
+            # Column definitions: (header, width, number_format)
+            exp_cols = [
+                ('Assembly Mark',              15, None),
+                ('Sub Assembly',               18, None),
+                ('Part Mark',                  12, None),
+                ('No.',                         6, '0'),
+                ('Name',                       22, None),
+                ('Profile',                    16, None),
+                ('kg/m',                        9, '#,##0.000'),
+                ('Length (mm)',                13, '#,##0.0'),
+                ('Weight (kg)',                13, '#,##0.00'),
+                ('Profile 2',                  12, None),
+                ('Grade',                      10, None),
+                ('Remark',                     20, None),
+                ('FIT UP (kg)',                13, '#,##0.00'),
+                ('FIT UP Date',                14, None),
+                ('WELDING (kg)',               13, '#,##0.00'),
+                ('WELDING Date',               14, None),
+                ('BLASTING & PAINTING (kg)',   22, '#,##0.00'),
+                ('BLASTING & PAINTING Date',   22, None),
+                ('SEND TO SITE (kg)',          16, '#,##0.00'),
+                ('SEND TO SITE Date',          16, None),
+            ]
+
+            hdr_fill = _Fill('solid', fgColor='1E3A5F')
+            hdr_font = _Font(bold=True, color='FFFFFF', size=10)
+            hdr_aln  = _Align(horizontal='center', vertical='center', wrap_text=True)
+            num_aln  = _Align(horizontal='right',  vertical='center')
+            txt_aln  = _Align(horizontal='left',   vertical='center')
+            thin     = _Side(style='thin', color='CCCCCC')
+            bdr      = _Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            # Header row
+            for ci, (col_name, col_w, _) in enumerate(exp_cols, 1):
+                cell = exp_ws.cell(row=1, column=ci, value=col_name)
+                cell.fill = hdr_fill; cell.font = hdr_font
+                cell.alignment = hdr_aln; cell.border = bdr
+                exp_ws.column_dimensions[cell.column_letter].width = col_w
+            exp_ws.row_dimensions[1].height = 30
+
+            # Data rows
+            col_keys = [c[0] for c in exp_cols]
+            for ri, r in enumerate(rows, 2):
+                row_fill = _Fill('solid', fgColor='F0F4FA' if ri % 2 == 0 else 'FFFFFF')
+                for ci, (key, _, num_fmt) in enumerate(exp_cols, 1):
+                    val = r.get(key)
+                    # Convert numeric strings to float for kg/number columns
+                    if num_fmt and val not in (None, ''):
+                        try:
+                            val = float(val)
+                        except (TypeError, ValueError):
+                            pass
+                    cell = exp_ws.cell(row=ri, column=ci, value=val)
+                    cell.fill = row_fill; cell.border = bdr
+                    if num_fmt and isinstance(val, (int, float)):
+                        cell.number_format = num_fmt
+                        cell.alignment = num_aln
+                    else:
+                        cell.alignment = txt_aln
+
+            exp_ws.freeze_panes = 'A2'
+            exp_ws.auto_filter.ref = exp_ws.dimensions
+
+            exp_buf = BytesIO()
+            exp_wb.save(exp_buf)
+
             ec1, ec2 = st.columns(2)
             with ec1:
                 st.download_button('📥 Download CSV',
                                    df.to_csv(index=False).encode('utf-8'),
-                                   f'master_database_{date.today()}.csv', 'text/csv',
+                                   f'master_database_{ts}.csv', 'text/csv',
                                    use_container_width=True, type='primary')
             with ec2:
-                buf = BytesIO()
-                df.to_excel(buf, index=False, engine='openpyxl')
-                st.download_button('📥 Download Excel', buf.getvalue(),
-                                   f'master_database_{date.today()}.xlsx',
+                st.download_button('📥 Download Excel', exp_buf.getvalue(),
+                                   f'master_database_{ts}.xlsx',
                                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                    use_container_width=True, type='primary')
             st.dataframe(df, use_container_width=True, hide_index=True)
