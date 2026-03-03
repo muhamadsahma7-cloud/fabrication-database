@@ -1,4 +1,6 @@
-import sqlite3, os, sys
+import os, sys
+import psycopg2
+import psycopg2.extras
 from datetime import date
 
 STAGES = ['FIT UP', 'WELDING', 'BLASTING & PAINTING', 'SEND TO SITE']
@@ -11,76 +13,127 @@ SHIFT_LABELS = ['Regular', 'OT→6:30', 'OT→7:30', 'OT→10:00', 'Sun/PH']
 SHIFT_KEYS   = ['regular', 'ot1', 'ot2', 'ot3', 'sun_ph']
 SHIFT_HOURS  = {'regular': 7.5, 'ot1': 8.5, 'ot2': 9.5, 'ot3': 11.5, 'sun_ph': 7.5}
 
-def _db_path():
-    # Store progress.db next to the .exe (or script) so data is portable
-    if getattr(sys, 'frozen', False):
-        return os.path.join(os.path.dirname(sys.executable), 'progress.db')
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'progress.db')
+
+# ── PostgreSQL connection wrapper ──────────────────────────────────────────────
+
+class _CurWrap:
+    """Thin cursor wrapper: provides fetchone/fetchall/lastrowid over psycopg2 cursor."""
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        return self._cur.fetchone()  # RealDictRow (dict subclass) or None
+
+    def fetchall(self):
+        return self._cur.fetchall() or []  # list of RealDictRow
+
+    @property
+    def lastrowid(self):
+        """Fetch the id returned by a RETURNING id clause."""
+        row = self._cur.fetchone()
+        return row['id'] if row else None
+
+
+class _DBConn:
+    """psycopg2 connection wrapper that mimics sqlite3 usage patterns.
+    Converts ? placeholders to %s and uses RealDictCursor for dict-like row access."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        sql = sql.replace('?', '%s')
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params or [])
+        return _CurWrap(cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
 
 def _conn():
-    c = sqlite3.connect(_db_path())
-    c.row_factory = sqlite3.Row
-    return c
+    try:
+        import streamlit as st
+        s = st.secrets
+        conn = psycopg2.connect(
+            host=s['db_host'],
+            port=int(s.get('db_port', 5432)),
+            dbname=s['db_name'],
+            user=s['db_user'],
+            password=s['db_password'],
+            sslmode='require',
+        )
+    except Exception:
+        # Local fallback via DATABASE_URL environment variable
+        conn = psycopg2.connect(os.environ.get('DATABASE_URL', ''))
+    return _DBConn(conn)
+
+
+# ── Schema initialisation ──────────────────────────────────────────────────────
 
 def init():
     db = _conn()
-    db.executescript("""
+
+    # Core tables
+    db.execute("""
         CREATE TABLE IF NOT EXISTS assemblies (
             assembly_mark   TEXT PRIMARY KEY,
-            total_weight_kg REAL DEFAULT 0,
+            total_weight_kg DOUBLE PRECISION DEFAULT 0,
             description     TEXT DEFAULT ''
-        );
+        )
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS parts (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            id                SERIAL PRIMARY KEY,
             assembly_mark     TEXT NOT NULL,
             sub_assembly_mark TEXT DEFAULT '',
             part_mark         TEXT DEFAULT '',
             no                INTEGER DEFAULT 1,
             name              TEXT DEFAULT '',
             profile           TEXT DEFAULT '',
-            kg_per_m          REAL DEFAULT 0,
-            length_mm         REAL DEFAULT 0,
-            total_weight_kg   REAL DEFAULT 0,
+            kg_per_m          DOUBLE PRECISION DEFAULT 0,
+            length_mm         DOUBLE PRECISION DEFAULT 0,
+            total_weight_kg   DOUBLE PRECISION DEFAULT 0,
             profile2          TEXT DEFAULT '',
             grade             TEXT DEFAULT '',
             remark            TEXT DEFAULT '',
             FOREIGN KEY (assembly_mark) REFERENCES assemblies(assembly_mark)
-        );
+        )
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS progress (
-            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            id                SERIAL PRIMARY KEY,
             entry_date        TEXT NOT NULL,
             assembly_mark     TEXT NOT NULL,
             stage             TEXT NOT NULL,
-            weight_kg         REAL DEFAULT 0,
+            weight_kg         DOUBLE PRECISION DEFAULT 0,
             qty               INTEGER DEFAULT 0,
             inspector         TEXT DEFAULT '',
             remarks           TEXT DEFAULT '',
-            created_at        TEXT DEFAULT (datetime('now','localtime'))
-        );
+            created_at        TIMESTAMPTZ DEFAULT NOW(),
+            sub_assembly_mark TEXT DEFAULT '',
+            delivery_order_no TEXT DEFAULT ''
+        )
     """)
     db.commit()
-    # Migration: add sub_assembly_mark column to progress if missing
-    try:
-        db.execute("ALTER TABLE progress ADD COLUMN sub_assembly_mark TEXT DEFAULT ''")
-        db.commit()
-    except Exception:
-        pass  # column already exists
-    # Migration: add remark column to parts if missing
-    try:
-        db.execute("ALTER TABLE parts ADD COLUMN remark TEXT DEFAULT ''")
-        db.commit()
-    except Exception:
-        pass  # column already exists
-    # Migration: rename old DELIVERY stage to SEND TO SITE
+
+    # Idempotent column migrations
+    for col_sql in [
+        "ALTER TABLE progress ADD COLUMN IF NOT EXISTS sub_assembly_mark TEXT DEFAULT ''",
+        "ALTER TABLE progress ADD COLUMN IF NOT EXISTS delivery_order_no TEXT DEFAULT ''",
+        "ALTER TABLE parts    ADD COLUMN IF NOT EXISTS remark TEXT DEFAULT ''",
+    ]:
+        db.execute(col_sql)
+    db.commit()
+
+    # Data migration: rename old DELIVERY stage
     db.execute("UPDATE progress SET stage='SEND TO SITE' WHERE stage='DELIVERY'")
     db.commit()
-    # Migration: add delivery_order_no column to progress if missing
-    try:
-        db.execute("ALTER TABLE progress ADD COLUMN delivery_order_no TEXT DEFAULT ''")
-        db.commit()
-    except Exception:
-        pass  # column already exists
-    # Sync assembly totals from parts (fixes any stale values)
+
+    # Sync assembly totals from parts (fixes stale values on startup)
     db.execute("""
         UPDATE assemblies
         SET total_weight_kg = (
@@ -89,44 +142,44 @@ def init():
         )
     """)
     db.commit()
+
     # Users table
     db.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            username      TEXT UNIQUE NOT NULL COLLATE NOCASE,
+            id            SERIAL PRIMARY KEY,
+            username      TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role          TEXT DEFAULT 'user',
             active        INTEGER DEFAULT 1
         )
     """)
     db.commit()
-    if db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-        db.execute("INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
-                   ('admin', _hash('admin123'), 'admin'))
+
+    if db.execute("SELECT COUNT(*) AS cnt FROM users").fetchone()['cnt'] == 0:
+        db.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?,?,?)",
+            ('admin', _hash('admin123'), 'admin')
+        )
         db.commit()
+
+    # Manpower tables
     db.execute("""
         CREATE TABLE IF NOT EXISTS manpower (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             entry_date  TEXT NOT NULL UNIQUE,
             regular     INTEGER DEFAULT 0,
             ot1         INTEGER DEFAULT 0,
             ot2         INTEGER DEFAULT 0,
             ot3         INTEGER DEFAULT 0,
             sun_ph      INTEGER DEFAULT 0,
-            created_at  TEXT DEFAULT (datetime('now','localtime'))
+            created_at  TIMESTAMPTZ DEFAULT NOW()
         )
     """)
     db.commit()
-    for col in ('cutting_man', 'supervisor', 'foremen', 'fitter', 'helper', 'semi_skill',
-                'material_coordinator', 'material_handler'):
-        try:
-            db.execute(f"ALTER TABLE manpower ADD COLUMN {col} INTEGER DEFAULT 0")
-            db.commit()
-        except Exception:
-            pass
+
     db.execute("""
         CREATE TABLE IF NOT EXISTS manpower_detail (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             entry_date  TEXT NOT NULL,
             worker_type TEXT NOT NULL,
             shift       TEXT NOT NULL,
@@ -135,35 +188,45 @@ def init():
         )
     """)
     db.commit()
+
+    # Drawings table — files stored as BYTEA in the database
     db.execute("""
         CREATE TABLE IF NOT EXISTS drawings (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            SERIAL PRIMARY KEY,
             title         TEXT NOT NULL,
             original_name TEXT NOT NULL,
             filename      TEXT NOT NULL UNIQUE,
             assembly_mark TEXT DEFAULT '',
             uploaded_by   TEXT DEFAULT '',
-            created_at    TEXT DEFAULT (datetime('now','localtime'))
+            created_at    TIMESTAMPTZ DEFAULT NOW(),
+            file_data     BYTEA
         )
     """)
+    db.execute("ALTER TABLE drawings ADD COLUMN IF NOT EXISTS file_data BYTEA")
     db.commit()
+
     db.close()
     init_raw_materials()
     init_sessions()
+
 
 def _hash(password):
     import hashlib
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
+
+# ── Users ──────────────────────────────────────────────────────────────────────
+
 def authenticate(username, password):
     c = _conn()
     row = c.execute(
         "SELECT id, username, role FROM users "
-        "WHERE username=? AND password_hash=? AND active=1",
+        "WHERE LOWER(username)=LOWER(?) AND password_hash=? AND active=1",
         (username.strip(), _hash(password))
     ).fetchone()
     c.close()
     return dict(row) if row else None
+
 
 def get_users():
     c = _conn()
@@ -172,6 +235,7 @@ def get_users():
     ).fetchall()
     c.close()
     return [dict(r) for r in rows]
+
 
 def add_user(username, password, role='user'):
     c = _conn()
@@ -185,11 +249,13 @@ def add_user(username, password, role='user'):
     finally:
         c.close()
 
+
 def update_user_password(uid, new_password):
     c = _conn()
     c.execute("UPDATE users SET password_hash=? WHERE id=?", (_hash(new_password), uid))
     c.commit()
     c.close()
+
 
 def update_user_role(uid, role):
     c = _conn()
@@ -197,11 +263,13 @@ def update_user_role(uid, role):
     c.commit()
     c.close()
 
+
 def toggle_user_active(uid):
     c = _conn()
     c.execute("UPDATE users SET active = 1 - active WHERE id=?", (uid,))
     c.commit()
     c.close()
+
 
 def delete_user_entry(uid):
     c = _conn()
@@ -209,46 +277,42 @@ def delete_user_entry(uid):
     c.commit()
     c.close()
 
-# ── Raw Material Delivery ─────────────────────────────────────────────────────
+
+# ── Raw Material Delivery ──────────────────────────────────────────────────────
+
 def init_raw_materials():
     c = _conn()
     c.execute("""
         CREATE TABLE IF NOT EXISTS raw_materials (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            id            SERIAL PRIMARY KEY,
             received_date TEXT NOT NULL,
             do_no         TEXT DEFAULT '',
             description   TEXT DEFAULT '',
             grade         TEXT DEFAULT '',
-            qty           REAL DEFAULT 0,
-            total_kg      REAL DEFAULT 0,
+            qty           DOUBLE PRECISION DEFAULT 0,
+            total_kg      DOUBLE PRECISION DEFAULT 0,
             remark        TEXT DEFAULT '',
-            created_at    TEXT DEFAULT (datetime('now','localtime'))
+            created_at    TIMESTAMPTZ DEFAULT NOW()
         )
     """)
+    c.execute("ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS do_no TEXT DEFAULT ''")
+    c.execute("ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS total_kg DOUBLE PRECISION DEFAULT 0")
     c.commit()
-    # Migrations
-    for col_def in [
-        "ALTER TABLE raw_materials ADD COLUMN do_no TEXT DEFAULT ''",
-        "ALTER TABLE raw_materials ADD COLUMN total_kg REAL DEFAULT 0",
-    ]:
-        try:
-            c.execute(col_def)
-            c.commit()
-        except Exception:
-            pass
     c.close()
+
 
 def add_raw_material(received_date, do_no, description, grade, qty, total_kg=0, remark=''):
     c = _conn()
     cur = c.execute(
         "INSERT INTO raw_materials (received_date, do_no, description, grade, qty, total_kg, remark) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "VALUES (?,?,?,?,?,?,?) RETURNING id",
         (str(received_date), do_no.strip(), description.strip(), grade.strip(), qty, float(total_kg), remark.strip())
     )
-    c.commit()
     rid = cur.lastrowid
+    c.commit()
     c.close()
     return rid
+
 
 def get_raw_material_summary():
     """Return overall totals: total entries, total qty, total kg received."""
@@ -261,6 +325,7 @@ def get_raw_material_summary():
     ).fetchone()
     c.close()
     return dict(row) if row else {'entries': 0, 'total_qty': 0, 'total_kg': 0}
+
 
 def get_raw_materials(start=None, end=None):
     c = _conn()
@@ -276,12 +341,14 @@ def get_raw_materials(start=None, end=None):
     c.close()
     return [dict(r) for r in rows]
 
+
 def delete_raw_material(rid):
     c = _conn()
     c.execute("DELETE FROM raw_materials WHERE id=?", (rid,))
     c.commit()
     c.close()
     _reorder_raw_materials()
+
 
 def _reorder_raw_materials():
     """Renumber raw_materials IDs sequentially after a deletion."""
@@ -291,10 +358,7 @@ def _reorder_raw_materials():
         "FROM raw_materials ORDER BY id"
     ).fetchall()
     c.execute("DELETE FROM raw_materials")
-    try:
-        c.execute("DELETE FROM sqlite_sequence WHERE name='raw_materials'")
-    except Exception:
-        pass
+    c.execute("ALTER SEQUENCE raw_materials_id_seq RESTART WITH 1")
     for r in rows:
         c.execute(
             "INSERT INTO raw_materials "
@@ -305,6 +369,7 @@ def _reorder_raw_materials():
         )
     c.commit()
     c.close()
+
 
 def import_raw_materials_excel(file_source):
     """Import raw materials from Excel.
@@ -369,6 +434,7 @@ def import_raw_materials_excel(file_source):
     except Exception as e:
         return 0, str(e)
 
+
 def replace_import_excel(file_source):
     """Clear all parts & assemblies (keeps progress), then reimport from Excel.
     file_source can be a file path (str) or bytes/BytesIO object."""
@@ -378,6 +444,7 @@ def replace_import_excel(file_source):
     c.commit()
     c.close()
     return import_excel(file_source)
+
 
 def import_excel(file_source):
     try:
@@ -390,7 +457,7 @@ def import_excel(file_source):
         rows = list(ws.iter_rows(values_only=True))
         header_row = next((i for i, r in enumerate(rows) if r and r[0] == 'Assembly Mark'), None)
         if header_row is None:
-            return 0, "Header row 'Assembly Mark' not found."
+            return 0, 0, "Header row 'Assembly Mark' not found."
         headers = [str(h).strip() if h else '' for h in rows[header_row]]
         col = {h: i for i, h in enumerate(headers)}
 
@@ -412,7 +479,7 @@ def import_excel(file_source):
         db = _conn()
         asm_weights  = {}
         part_count   = 0
-        progress_map = {}   # (asm, sub, stage) -> (kg, date_str)
+        progress_map = {}   # (asm, stage) -> (kg, date_str)
 
         stage_cols = [
             ('FIT UP',              'FIT UP (kg)',               'FIT UP Date'),
@@ -492,20 +559,24 @@ def import_excel(file_source):
     except Exception as e:
         return 0, 0, str(e)
 
+
 def add_assembly(mark, weight, desc=''):
     db = _conn()
     db.execute(
-        "INSERT OR IGNORE INTO assemblies (assembly_mark, total_weight_kg, description) VALUES (?, ?, ?)",
+        "INSERT INTO assemblies (assembly_mark, total_weight_kg, description) VALUES (?, ?, ?) "
+        "ON CONFLICT(assembly_mark) DO NOTHING",
         (mark.strip().upper(), weight, desc)
     )
     db.commit()
     db.close()
 
+
 def add_part(asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark=''):
     db = _conn()
     # ensure assembly exists
     db.execute(
-        "INSERT OR IGNORE INTO assemblies (assembly_mark, total_weight_kg) VALUES (?, 0)",
+        "INSERT INTO assemblies (assembly_mark, total_weight_kg) VALUES (?, 0) "
+        "ON CONFLICT(assembly_mark) DO NOTHING",
         (asm,)
     )
     db.execute(
@@ -523,6 +594,7 @@ def add_part(asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark=''
     )
     db.commit()
     db.close()
+
 
 def update_part(pid, asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark=''):
     db = _conn()
@@ -543,6 +615,7 @@ def update_part(pid, asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, r
     db.commit()
     db.close()
 
+
 def update_progress(pid, entry_date, mark, sub_mark, stage, weight, qty, remarks, do_no=''):
     db = _conn()
     db.execute("""
@@ -551,6 +624,7 @@ def update_progress(pid, entry_date, mark, sub_mark, stage, weight, qty, remarks
     """, (str(entry_date), mark, sub_mark, stage, float(weight), int(qty), remarks, do_no, pid))
     db.commit()
     db.close()
+
 
 def delete_part(part_id):
     db = _conn()
@@ -567,11 +641,13 @@ def delete_part(part_id):
         db.commit()
     db.close()
 
+
 def get_marks():
     db = _conn()
     rows = db.execute("SELECT assembly_mark FROM assemblies ORDER BY assembly_mark").fetchall()
     db.close()
-    return [r[0] for r in rows]
+    return [r['assembly_mark'] for r in rows]
+
 
 def get_assemblies():
     db = _conn()
@@ -579,22 +655,25 @@ def get_assemblies():
     db.close()
     return [dict(r) for r in rows]
 
+
 def get_assembly_weight(mark):
     db = _conn()
     row = db.execute("SELECT total_weight_kg FROM assemblies WHERE assembly_mark = ?", (mark,)).fetchone()
     db.close()
     return row['total_weight_kg'] if row else 0
 
+
 def progress_exists(entry_date, mark, sub_mark, stage):
     """Return True if a progress entry already exists for the given combination."""
     db = _conn()
     row = db.execute(
-        "SELECT 1 FROM progress WHERE entry_date=? AND assembly_mark=? "
+        "SELECT 1 AS exists FROM progress WHERE entry_date=? AND assembly_mark=? "
         "AND sub_assembly_mark=? AND stage=?",
         (str(entry_date), mark, sub_mark, stage)
     ).fetchone()
     db.close()
     return row is not None
+
 
 def get_completed_stages(mark, sub_mark):
     """Return set of stages that have at least one progress entry for this assembly/sub-assembly."""
@@ -607,23 +686,26 @@ def get_completed_stages(mark, sub_mark):
     db.close()
     return {r['stage'] for r in rows}
 
+
 def add_progress(entry_date, mark, sub_mark, stage, weight, qty, remarks, do_no=''):
     db = _conn()
     cur = db.execute(
         "INSERT INTO progress (entry_date, assembly_mark, sub_assembly_mark, stage, "
-        "weight_kg, qty, remarks, delivery_order_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "weight_kg, qty, remarks, delivery_order_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         (str(entry_date), mark, sub_mark, stage, float(weight), int(qty), remarks, do_no)
     )
-    db.commit()
     rid = cur.lastrowid
+    db.commit()
     db.close()
     return rid
+
 
 def delete_progress(rid):
     db = _conn()
     db.execute("DELETE FROM progress WHERE id = ?", (rid,))
     db.commit()
     db.close()
+
 
 def clear_all_data():
     """Delete all records from progress, parts, and assemblies tables."""
@@ -633,6 +715,7 @@ def clear_all_data():
     db.execute("DELETE FROM assemblies")
     db.commit()
     db.close()
+
 
 def get_by_date(d):
     db = _conn()
@@ -645,6 +728,7 @@ def get_by_date(d):
     db.close()
     return [dict(r) for r in rows]
 
+
 def get_by_range(start, end):
     db = _conn()
     rows = db.execute(
@@ -656,21 +740,22 @@ def get_by_range(start, end):
     db.close()
     return [dict(r) for r in rows]
 
+
 def get_cumulative():
     db = _conn()
     rows = db.execute("""
         SELECT a.assembly_mark, a.total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'             THEN p.weight_kg END), 0) as fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'            THEN p.weight_kg END), 0) as welding,
-
             COALESCE(SUM(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.weight_kg END), 0) as blasting,
             COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'       THEN p.weight_kg END), 0) as sendsite
         FROM assemblies a
         LEFT JOIN progress p ON a.assembly_mark = p.assembly_mark
-        GROUP BY a.assembly_mark ORDER BY a.assembly_mark
+        GROUP BY a.assembly_mark, a.total_weight_kg ORDER BY a.assembly_mark
     """).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
 
 def get_cumulative_by_sub():
     """Progress grouped by (assembly, sub-assembly).
@@ -685,7 +770,6 @@ def get_cumulative_by_sub():
             sp.sub_weight AS total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
-
             COALESCE(SUM(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.weight_kg END), 0) AS blasting,
             COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite
         FROM (
@@ -697,7 +781,7 @@ def get_cumulative_by_sub():
         LEFT JOIN progress p
             ON sp.assembly_mark = p.assembly_mark
            AND sp.sub_assembly_mark = p.sub_assembly_mark
-        GROUP BY sp.assembly_mark, sp.sub_assembly_mark
+        GROUP BY sp.assembly_mark, sp.sub_assembly_mark, sp.sub_weight
 
         UNION ALL
 
@@ -707,7 +791,6 @@ def get_cumulative_by_sub():
             a.total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
-
             COALESCE(SUM(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.weight_kg END), 0) AS blasting,
             COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite
         FROM assemblies a
@@ -715,21 +798,27 @@ def get_cumulative_by_sub():
         WHERE a.assembly_mark NOT IN (
             SELECT DISTINCT assembly_mark FROM parts WHERE sub_assembly_mark != ''
         )
-        GROUP BY a.assembly_mark
+        GROUP BY a.assembly_mark, a.total_weight_kg
         ORDER BY 1, 2
     """).fetchall()
     db.close()
     return [dict(r) for r in rows]
 
+
 def get_summary():
     db = _conn()
-    total = db.execute("SELECT COALESCE(SUM(total_weight_kg),0) FROM assemblies").fetchone()[0]
-    rows  = db.execute("SELECT stage, COALESCE(SUM(weight_kg),0) as done FROM progress GROUP BY stage").fetchall()
+    total = db.execute(
+        "SELECT COALESCE(SUM(total_weight_kg),0) AS total FROM assemblies"
+    ).fetchone()['total']
+    rows  = db.execute(
+        "SELECT stage, COALESCE(SUM(weight_kg),0) as done FROM progress GROUP BY stage"
+    ).fetchall()
     db.close()
     result = {'total': total}
     for r in rows:
         result[r['stage']] = r['done']
     return result
+
 
 def get_sub_assemblies(assembly_mark):
     """Return distinct sub-assembly marks for a given assembly."""
@@ -741,7 +830,8 @@ def get_sub_assemblies(assembly_mark):
         (assembly_mark,)
     ).fetchall()
     db.close()
-    return [r[0] for r in rows]
+    return [r['sub_assembly_mark'] for r in rows]
+
 
 def get_deliveries():
     db = _conn()
@@ -753,6 +843,7 @@ def get_deliveries():
     ).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
 
 def get_parts(assembly_mark=None):
     db = _conn()
@@ -767,6 +858,7 @@ def get_parts(assembly_mark=None):
         ).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
 
 def get_master_export():
     """Parts table joined with cumulative progress per (assembly, sub-assembly)."""
@@ -802,10 +894,10 @@ def get_master_export():
                 MAX(CASE WHEN stage='WELDING'             THEN 1 ELSE 0 END) AS welding_done,
                 MAX(CASE WHEN stage='BLASTING & PAINTING' THEN 1 ELSE 0 END) AS blasting_done,
                 MAX(CASE WHEN stage='SEND TO SITE'        THEN 1 ELSE 0 END) AS sendsite_done,
-                GROUP_CONCAT(CASE WHEN stage='FIT UP'              THEN entry_date END) AS fitup_dates,
-                GROUP_CONCAT(CASE WHEN stage='WELDING'             THEN entry_date END) AS welding_dates,
-                GROUP_CONCAT(CASE WHEN stage='BLASTING & PAINTING' THEN entry_date END) AS blasting_dates,
-                GROUP_CONCAT(CASE WHEN stage='SEND TO SITE'        THEN entry_date END) AS sendsite_dates
+                STRING_AGG(CASE WHEN stage='FIT UP'              THEN entry_date END, ',') AS fitup_dates,
+                STRING_AGG(CASE WHEN stage='WELDING'             THEN entry_date END, ',') AS welding_dates,
+                STRING_AGG(CASE WHEN stage='BLASTING & PAINTING' THEN entry_date END, ',') AS blasting_dates,
+                STRING_AGG(CASE WHEN stage='SEND TO SITE'        THEN entry_date END, ',') AS sendsite_dates
             FROM progress
             GROUP BY assembly_mark, sub_assembly_mark
         ) pr ON p.assembly_mark = pr.assembly_mark
@@ -814,6 +906,7 @@ def get_master_export():
     """).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
 
 def get_parts_summary(assembly_mark):
     """Return part count and total weight for an assembly."""
@@ -825,6 +918,7 @@ def get_parts_summary(assembly_mark):
     db.close()
     return dict(row) if row else {'cnt': 0, 'total': 0}
 
+
 def search_parts(keyword='', assembly_mark=None):
     """Search parts by keyword across all text columns."""
     db = _conn()
@@ -833,25 +927,26 @@ def search_parts(keyword='', assembly_mark=None):
         rows = db.execute("""
             SELECT * FROM parts
             WHERE assembly_mark = ?
-              AND (assembly_mark LIKE ? OR sub_assembly_mark LIKE ? OR part_mark LIKE ?
-                   OR name LIKE ? OR profile LIKE ? OR profile2 LIKE ? OR grade LIKE ?)
+              AND (assembly_mark ILIKE ? OR sub_assembly_mark ILIKE ? OR part_mark ILIKE ?
+                   OR name ILIKE ? OR profile ILIKE ? OR profile2 ILIKE ? OR grade ILIKE ?)
             ORDER BY assembly_mark, part_mark
         """, (assembly_mark, kw, kw, kw, kw, kw, kw, kw)).fetchall()
     else:
         rows = db.execute("""
             SELECT * FROM parts
-            WHERE (assembly_mark LIKE ? OR sub_assembly_mark LIKE ? OR part_mark LIKE ?
-                   OR name LIKE ? OR profile LIKE ? OR profile2 LIKE ? OR grade LIKE ?)
+            WHERE (assembly_mark ILIKE ? OR sub_assembly_mark ILIKE ? OR part_mark ILIKE ?
+                   OR name ILIKE ? OR profile ILIKE ? OR profile2 ILIKE ? OR grade ILIKE ?)
             ORDER BY assembly_mark, part_mark
         """, (kw, kw, kw, kw, kw, kw, kw)).fetchall()
     db.close()
     return [dict(r) for r in rows]
 
+
 def search_progress(keyword='', stage=None, assembly_mark=None, start=None, end=None):
     """Search progress entries by keyword, stage, assembly and/or date range."""
     db = _conn()
     kw = f'%{keyword}%'
-    conditions = ["(p.assembly_mark LIKE ? OR p.remarks LIKE ?)"]
+    conditions = ["(p.assembly_mark ILIKE ? OR p.remarks ILIKE ?)"]
     params = [kw, kw]
     if stage:
         conditions.append("p.stage = ?")
@@ -876,6 +971,7 @@ def search_progress(keyword='', stage=None, assembly_mark=None, start=None, end=
     db.close()
     return [dict(r) for r in rows]
 
+
 def export_csv(rows, path):
     import csv
     if not rows:
@@ -884,6 +980,7 @@ def export_csv(rows, path):
         w = csv.DictWriter(f, fieldnames=rows[0].keys())
         w.writeheader()
         w.writerows(rows)
+
 
 def export_excel(rows, path):
     import openpyxl
@@ -917,38 +1014,41 @@ def export_excel(rows, path):
     wb.save(path)
 
 
-# ── Session / Online Tracking ─────────────────────────────────────────────────
+# ── Session / Online Tracking ──────────────────────────────────────────────────
+
 def init_sessions():
-    from datetime import datetime as _dt
     c = _conn()
-    c.executescript("""
+    c.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         SERIAL PRIMARY KEY,
             username   TEXT NOT NULL,
             role       TEXT DEFAULT '',
             login_time TEXT NOT NULL,
             last_seen  TEXT NOT NULL,
             active     INTEGER DEFAULT 1
-        );
+        )
     """)
     c.commit()
     c.close()
+
 
 def _now_gmt8():
     from datetime import datetime as _dt, timedelta as _td
     return (_dt.utcnow() + _td(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
 
+
 def create_session(username, role=''):
     now = _now_gmt8()
     c = _conn()
     cur = c.execute(
-        "INSERT INTO sessions (username, role, login_time, last_seen) VALUES (?,?,?,?)",
+        "INSERT INTO sessions (username, role, login_time, last_seen) VALUES (?,?,?,?) RETURNING id",
         (username, role, now, now)
     )
     sid = cur.lastrowid
     c.commit()
     c.close()
     return sid
+
 
 def update_session_heartbeat(session_id):
     now = _now_gmt8()
@@ -957,11 +1057,13 @@ def update_session_heartbeat(session_id):
     c.commit()
     c.close()
 
+
 def end_session(session_id):
     c = _conn()
     c.execute("UPDATE sessions SET active=0 WHERE id=?", (session_id,))
     c.commit()
     c.close()
+
 
 def get_active_sessions(minutes=10):
     """Users active within the last N minutes (GMT+8)."""
@@ -977,6 +1079,7 @@ def get_active_sessions(minutes=10):
     c.close()
     return [dict(r) for r in rows]
 
+
 def get_login_history(limit=100):
     """Recent login sessions, newest first."""
     c = _conn()
@@ -989,7 +1092,7 @@ def get_login_history(limit=100):
     return [dict(r) for r in rows]
 
 
-# ── Manpower ──────────────────────────────────────────────────────────────────
+# ── Manpower ───────────────────────────────────────────────────────────────────
 
 def save_manpower(entry_date, regular, ot1, ot2, ot3, sun_ph,
                   cutting_man=0, supervisor=0, foremen=0, fitter=0, helper=0, semi_skill=0,
@@ -1002,13 +1105,13 @@ def save_manpower(entry_date, regular, ot1, ot2, ot3, sun_ph,
              material_coordinator, material_handler)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(entry_date) DO UPDATE SET
-            regular=excluded.regular, ot1=excluded.ot1, ot2=excluded.ot2,
-            ot3=excluded.ot3, sun_ph=excluded.sun_ph,
-            cutting_man=excluded.cutting_man, supervisor=excluded.supervisor,
-            foremen=excluded.foremen, fitter=excluded.fitter,
-            helper=excluded.helper, semi_skill=excluded.semi_skill,
-            material_coordinator=excluded.material_coordinator,
-            material_handler=excluded.material_handler
+            regular=EXCLUDED.regular, ot1=EXCLUDED.ot1, ot2=EXCLUDED.ot2,
+            ot3=EXCLUDED.ot3, sun_ph=EXCLUDED.sun_ph,
+            cutting_man=EXCLUDED.cutting_man, supervisor=EXCLUDED.supervisor,
+            foremen=EXCLUDED.foremen, fitter=EXCLUDED.fitter,
+            helper=EXCLUDED.helper, semi_skill=EXCLUDED.semi_skill,
+            material_coordinator=EXCLUDED.material_coordinator,
+            material_handler=EXCLUDED.material_handler
     """, (str(entry_date),
           int(regular), int(ot1), int(ot2), int(ot3), int(sun_ph),
           int(cutting_man), int(supervisor), int(foremen),
@@ -1017,11 +1120,13 @@ def save_manpower(entry_date, regular, ot1, ot2, ot3, sun_ph,
     c.commit()
     c.close()
 
+
 def get_manpower(entry_date):
     c = _conn()
     row = c.execute("SELECT * FROM manpower WHERE entry_date=?", (str(entry_date),)).fetchone()
     c.close()
     return dict(row) if row else None
+
 
 def save_manpower_grid(entry_date, grid):
     """Save a full grid {worker_type: {shift_key: count}} for a date."""
@@ -1037,6 +1142,7 @@ def save_manpower_grid(entry_date, grid):
     c.commit()
     c.close()
 
+
 def get_manpower_grid(entry_date):
     """Return {worker_type: {shift_key: count}} for a date."""
     c = _conn()
@@ -1049,6 +1155,7 @@ def get_manpower_grid(entry_date):
     for r in rows:
         grid.setdefault(r['worker_type'], {})[r['shift']] = r['count']
     return grid
+
 
 def get_manhour_summary():
     """Total manhours, total days logged, and average manhours per day."""
@@ -1063,31 +1170,21 @@ def get_manhour_summary():
     return {'total_manhours': total_mh, 'total_days': total_days, 'avg_per_day': avg}
 
 
-# ── Drawings ──────────────────────────────────────────────────────────────────
-
-def _drawings_dir():
-    if getattr(sys, 'frozen', False):
-        base = os.path.dirname(sys.executable)
-    else:
-        base = os.path.dirname(os.path.abspath(__file__))
-    d = os.path.join(base, 'drawings')
-    os.makedirs(d, exist_ok=True)
-    return d
+# ── Drawings (stored as BYTEA in database) ─────────────────────────────────────
 
 def save_drawing(title, assembly_mark, original_name, file_bytes, uploaded_by=''):
     import uuid
     ext      = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else 'bin'
     filename = f"{uuid.uuid4().hex}.{ext}"
-    path     = os.path.join(_drawings_dir(), filename)
-    with open(path, 'wb') as f:
-        f.write(file_bytes)
     c = _conn()
     c.execute("""
-        INSERT INTO drawings (title, original_name, filename, assembly_mark, uploaded_by)
-        VALUES (?,?,?,?,?)
-    """, (title.strip(), original_name, filename, assembly_mark or '', uploaded_by))
+        INSERT INTO drawings (title, original_name, filename, assembly_mark, uploaded_by, file_data)
+        VALUES (?,?,?,?,?,?)
+    """, (title.strip(), original_name, filename, assembly_mark or '', uploaded_by,
+          psycopg2.Binary(file_bytes)))
     c.commit()
     c.close()
+
 
 def get_drawings(assembly_mark=None):
     c = _conn()
@@ -1101,16 +1198,9 @@ def get_drawings(assembly_mark=None):
     c.close()
     return [dict(r) for r in rows]
 
-def get_drawing_path(filename):
-    return os.path.join(_drawings_dir(), filename)
 
 def delete_drawing(did):
     c = _conn()
-    row = c.execute("SELECT filename FROM drawings WHERE id=?", (did,)).fetchone()
-    if row:
-        path = get_drawing_path(row['filename'])
-        if os.path.exists(path):
-            os.remove(path)
-        c.execute("DELETE FROM drawings WHERE id=?", (did,))
-        c.commit()
+    c.execute("DELETE FROM drawings WHERE id=?", (did,))
+    c.commit()
     c.close()

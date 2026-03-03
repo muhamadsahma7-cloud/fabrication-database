@@ -1,7 +1,6 @@
 import streamlit as st
 import db
 import pandas as pd
-import os
 import base64
 from datetime import date, timedelta
 from io import BytesIO
@@ -908,22 +907,21 @@ def page_drawing():
 
     # ── Drawing list ──────────────────────────────────────────────────────────
     for drw in drawings:
-        ext   = drw['filename'].rsplit('.', 1)[-1].lower()
+        ext   = drw['original_name'].rsplit('.', 1)[-1].lower() if '.' in drw['original_name'] else ''
         label = f"📄 {drw['title']}"
         if drw['assembly_mark']:
             label += f"  ·  {drw['assembly_mark']}"
-        label += f"  ·  {drw['created_at'][:10]}"
+        label += f"  ·  {str(drw['created_at'])[:10]}"
 
         with st.expander(label):
-            path = db.get_drawing_path(drw['filename'])
+            file_bytes = bytes(drw['file_data']) if drw.get('file_data') else None
 
-            if not os.path.exists(path):
-                st.warning('File not found on server.')
+            if not file_bytes:
+                st.warning('File data not found on server.')
             elif ext in ('png', 'jpg', 'jpeg'):
-                st.image(path, use_container_width=True)
+                st.image(file_bytes, use_container_width=True)
             elif ext == 'pdf':
-                with open(path, 'rb') as f:
-                    b64 = base64.b64encode(f.read()).decode()
+                b64 = base64.b64encode(file_bytes).decode()
                 st.markdown(
                     f'<iframe src="data:application/pdf;base64,{b64}" '
                     f'width="100%" height="700px" style="border:none;"></iframe>',
@@ -931,10 +929,10 @@ def page_drawing():
                 )
 
             # Download button for all types
-            with open(path, 'rb') as f:
+            if file_bytes:
                 st.download_button(
                     f'📥 Download {drw["original_name"]}',
-                    f.read(), drw['original_name'],
+                    file_bytes, drw['original_name'],
                     key=f'dl_{drw["id"]}',
                     use_container_width=True
                 )
