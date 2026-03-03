@@ -1022,14 +1022,11 @@ def page_drawing():
     if role != 'viewer':
         with st.container(border=True):
             st.subheader('Upload Drawings')
-            uc1, uc2, uc3 = st.columns([1, 1, 1.5])
+            uc1, uc2 = st.columns([1, 1])
             with uc1:
                 drw_rev  = st.text_input('Rev No.', key='drw_rev', placeholder='e.g. A, B, C1')
             with uc2:
                 drw_date = st.date_input('Date Received', value=date.today(), key='drw_date')
-            with uc3:
-                drw_asm  = st.selectbox('Assembly Mark (optional)',
-                                        [''] + _get_marks(), key='drw_asm')
 
             drw_files = st.file_uploader(
                 'Files (PDF, PNG, JPG) — select one or multiple',
@@ -1051,7 +1048,7 @@ def page_drawing():
                     for f in drw_files:
                         title = f.name.rsplit('.', 1)[0]   # filename without extension
                         db.save_drawing(
-                            title, drw_asm,
+                            title, '',
                             f.name, f.read(),
                             st.session_state.user['username'],
                             drw_rev.strip(),
@@ -1063,10 +1060,7 @@ def page_drawing():
 
     st.divider()
 
-    # ── Filter ────────────────────────────────────────────────────────────────
-    filter_asm = st.selectbox('Filter by Assembly', ['All'] + _get_marks(), key='drw_filter')
-    asm_f      = None if filter_asm == 'All' else filter_asm
-    drawings   = db.get_drawings(assembly_mark=asm_f)
+    drawings = db.get_drawings()
 
     if not drawings:
         st.info('No drawings uploaded yet.')
@@ -1080,8 +1074,6 @@ def page_drawing():
             label += f"  ·  Rev {drw['rev_no']}"
         if drw.get('date_received'):
             label += f"  ·  {drw['date_received']}"
-        if drw['assembly_mark']:
-            label += f"  ·  {drw['assembly_mark']}"
 
         with st.expander(label):
             meta_parts = []
@@ -1089,8 +1081,6 @@ def page_drawing():
                 meta_parts.append(f"**Rev:** {drw['rev_no']}")
             if drw.get('date_received'):
                 meta_parts.append(f"**Date Received:** {drw['date_received']}")
-            if drw.get('assembly_mark'):
-                meta_parts.append(f"**Assembly:** {drw['assembly_mark']}")
             if meta_parts:
                 st.caption('  ·  '.join(meta_parts))
 
