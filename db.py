@@ -473,8 +473,8 @@ def replace_import_excel(file_source):
     """Clear all parts & assemblies (keeps progress), then reimport from Excel.
     file_source can be a file path (str) or bytes/BytesIO object."""
     c = _conn()
-    c.execute("DELETE FROM parts")
-    c.execute("DELETE FROM assemblies")
+    # TRUNCATE is instant; DELETE on 4k-row tables hits Supabase statement timeout
+    c.execute("TRUNCATE TABLE parts, assemblies")
     c.commit()
     c.close()
     return import_excel(file_source)
@@ -510,12 +510,6 @@ def import_excel(file_source):
             try: return int(float(v or 1))
             except: return 1
 
-        db = _conn()
-        asm_weights   = {}
-        asm_inserted  = set()   # track assemblies already inserted (FK constraint)
-        part_count    = 0
-        progress_map  = {}   # (asm, stage) -> (kg, date_str)
-
         stage_cols = [
             ('FIT UP',              'FIT UP (kg)',               'FIT UP Date'),
             ('WELDING',             'WELDING (kg)',              'WELDING Date'),
@@ -523,42 +517,36 @@ def import_excel(file_source):
             ('SEND TO SITE',        'SEND TO SITE (kg)',         'SEND TO SITE Date'),
         ]
 
+        # ── Pass 1: parse entire Excel into memory lists ──────────────────────
+        asm_order    = []          # insertion order preserved
+        asm_set      = set()
+        parts_rows   = []          # list of 12-tuples for bulk INSERT
+        asm_weights  = {}          # asm -> total kg
+        progress_map = {}          # (asm, stage) -> (total_kg, date_str)
+
         for row in rows[header_row + 1:]:
             if not row or not _get(row, 'Assembly Mark'):
                 continue
 
-            asm  = str(_get(row, 'Assembly Mark', default='')).strip()
-            sub  = str(_get(row, 'Sub Assembly', 'Sub-Assembly Mark', 'Sub Assembly Mark', default='') or '').strip()
-            pm   = str(_get(row, 'Part Mark', default='') or '').strip()
-            no   = _int(_get(row, 'No.', default=1))
-            name = str(_get(row, 'Name', 'NAME', default='') or '').strip()
-            prof = str(_get(row, 'Profile', default='') or '').strip()
-            kgm  = _float(_get(row, 'kg/m', default=0))
-            lmm  = _float(_get(row, 'Length (mm)', 'Length', default=0))
-            tw   = _float(_get(row, 'Weight (kg)', 'Total weight', default=0))
-            prof2= str(_get(row, 'Profile 2', 'Profile2', default='') or '').strip()
+            asm    = str(_get(row, 'Assembly Mark', default='')).strip()
+            sub    = str(_get(row, 'Sub Assembly', 'Sub-Assembly Mark', 'Sub Assembly Mark', default='') or '').strip()
+            pm     = str(_get(row, 'Part Mark', default='') or '').strip()
+            no     = _int(_get(row, 'No.', default=1))
+            name   = str(_get(row, 'Name', 'NAME', default='') or '').strip()
+            prof   = str(_get(row, 'Profile', default='') or '').strip()
+            kgm    = _float(_get(row, 'kg/m', default=0))
+            lmm    = _float(_get(row, 'Length (mm)', 'Length', default=0))
+            tw     = _float(_get(row, 'Weight (kg)', 'Total weight', default=0))
+            prof2  = str(_get(row, 'Profile 2', 'Profile2', default='') or '').strip()
             grade  = str(_get(row, 'Grade', default='') or '').strip()
             remark = str(_get(row, 'Remark', default='') or '').strip()
 
-            # PostgreSQL enforces FK immediately — ensure assembly row exists first
-            if asm not in asm_inserted:
-                db.execute(
-                    "INSERT INTO assemblies (assembly_mark, total_weight_kg) VALUES (?, 0) "
-                    "ON CONFLICT(assembly_mark) DO NOTHING",
-                    (asm,)
-                )
-                asm_inserted.add(asm)
-
-            db.execute(
-                "INSERT INTO parts (assembly_mark, sub_assembly_mark, part_mark, no, name, "
-                "profile, kg_per_m, length_mm, total_weight_kg, profile2, grade, remark) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark)
-            )
+            if asm not in asm_set:
+                asm_order.append(asm)
+                asm_set.add(asm)
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
-            part_count += 1
+            parts_rows.append((asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark))
 
-            # Collect progress data — sum per-part kg values per (assembly, stage).
             for stage, kg_col, date_col in stage_cols:
                 kg = _float(_get(row, kg_col, default=0))
                 if kg > 0:
@@ -575,31 +563,59 @@ def import_excel(file_source):
                     else:
                         progress_map[(asm, stage)] = (kg, date_str)
 
-        for asm, wt in asm_weights.items():
-            db.execute(
-                "INSERT INTO assemblies (assembly_mark, total_weight_kg) VALUES (?, ?) "
-                "ON CONFLICT(assembly_mark) DO UPDATE SET "
-                "total_weight_kg = (SELECT COALESCE(SUM(total_weight_kg),0) FROM parts WHERE assembly_mark = excluded.assembly_mark)",
-                (asm, wt)
-            )
+        if not parts_rows:
+            return 0, 0, "No valid data rows found."
 
-        # Import progress records — one per (assembly_mark, stage)
+        # ── Pass 2: bulk DB writes (execute_values = one statement per batch) ─
+        db  = _conn()
+        raw = db._conn   # underlying psycopg2 connection
+        cur = raw.cursor()
+
+        # 1. Assemblies — all 478 in one statement; include final weights
+        psycopg2.extras.execute_values(
+            cur,
+            "INSERT INTO assemblies (assembly_mark, total_weight_kg) VALUES %s "
+            "ON CONFLICT(assembly_mark) DO UPDATE SET total_weight_kg = EXCLUDED.total_weight_kg",
+            [(asm, asm_weights[asm]) for asm in asm_order],
+        )
+        raw.commit()
+
+        # 2. Parts — 500-row chunks (each chunk is one fast statement)
+        CHUNK = 500
+        for i in range(0, len(parts_rows), CHUNK):
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO parts "
+                "(assembly_mark, sub_assembly_mark, part_mark, no, name, "
+                "profile, kg_per_m, length_mm, total_weight_kg, profile2, grade, remark) "
+                "VALUES %s",
+                parts_rows[i : i + CHUNK],
+            )
+            raw.commit()
+
+        # 3. Progress — single DELETE + single INSERT
+        prog_rows  = [(ds, asm, '', stg, kg) for (asm, stg), (kg, ds) in progress_map.items()]
         prog_count = 0
-        for (asm, stage), (kg, date_str) in progress_map.items():
-            db.execute(
-                "DELETE FROM progress WHERE assembly_mark=? AND sub_assembly_mark='' AND stage=?",
-                (asm, stage)
+        if prog_rows:
+            psycopg2.extras.execute_values(
+                cur,
+                "DELETE FROM progress "
+                "WHERE (assembly_mark, stage) IN (VALUES %s) AND sub_assembly_mark = ''",
+                [(asm, stg) for asm, stg in progress_map],
             )
-            db.execute(
-                "INSERT INTO progress (entry_date, assembly_mark, sub_assembly_mark, stage, weight_kg) "
-                "VALUES (?,?,?,?,?)",
-                (date_str, asm, '', stage, kg)
+            raw.commit()
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO progress "
+                "(entry_date, assembly_mark, sub_assembly_mark, stage, weight_kg) VALUES %s",
+                prog_rows,
             )
-            prog_count += 1
+            raw.commit()
+            prog_count = len(prog_rows)
 
-        db.commit()
+        cur.close()
         db.close()
-        return part_count, prog_count, None
+        return len(parts_rows), prog_count, None
     except Exception as e:
         return 0, 0, str(e)
 
