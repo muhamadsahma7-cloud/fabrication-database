@@ -511,9 +511,10 @@ def import_excel(file_source):
             except: return 1
 
         db = _conn()
-        asm_weights  = {}
-        part_count   = 0
-        progress_map = {}   # (asm, stage) -> (kg, date_str)
+        asm_weights   = {}
+        asm_inserted  = set()   # track assemblies already inserted (FK constraint)
+        part_count    = 0
+        progress_map  = {}   # (asm, stage) -> (kg, date_str)
 
         stage_cols = [
             ('FIT UP',              'FIT UP (kg)',               'FIT UP Date'),
@@ -538,6 +539,15 @@ def import_excel(file_source):
             prof2= str(_get(row, 'Profile 2', 'Profile2', default='') or '').strip()
             grade  = str(_get(row, 'Grade', default='') or '').strip()
             remark = str(_get(row, 'Remark', default='') or '').strip()
+
+            # PostgreSQL enforces FK immediately — ensure assembly row exists first
+            if asm not in asm_inserted:
+                db.execute(
+                    "INSERT INTO assemblies (assembly_mark, total_weight_kg) VALUES (?, 0) "
+                    "ON CONFLICT(assembly_mark) DO NOTHING",
+                    (asm,)
+                )
+                asm_inserted.add(asm)
 
             db.execute(
                 "INSERT INTO parts (assembly_mark, sub_assembly_mark, part_mark, no, name, "
