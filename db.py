@@ -55,20 +55,15 @@ class _DBConn:
 
 
 def _conn():
-    try:
-        import streamlit as st
-        s = st.secrets
-        conn = psycopg2.connect(
-            host=s['db_host'],
-            port=int(s.get('db_port', 5432)),
-            dbname=s['db_name'],
-            user=s['db_user'],
-            password=s['db_password'],
-            sslmode='require',
-        )
-    except Exception:
-        # Local fallback via DATABASE_URL environment variable
-        conn = psycopg2.connect(os.environ.get('DATABASE_URL', ''))
+    import streamlit as st
+    conn = psycopg2.connect(
+        host=st.secrets['db_host'],
+        port=int(st.secrets.get('db_port', 5432)),
+        dbname=st.secrets['db_name'],
+        user=st.secrets['db_user'],
+        password=st.secrets['db_password'],
+        sslmode='require',
+    )
     return _DBConn(conn)
 
 
