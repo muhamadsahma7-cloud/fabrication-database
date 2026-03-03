@@ -1108,18 +1108,15 @@ def page_drawing():
                 elif ext in ('png', 'jpg', 'jpeg'):
                     st.image(file_bytes, use_container_width=True)
                 elif ext == 'pdf':
-                    b64 = base64.b64encode(file_bytes).decode()
-                    st.markdown(
-                        f'<iframe src="data:application/pdf;base64,{b64}" '
-                        f'width="100%" height="700px" style="border:none;"></iframe>',
-                        unsafe_allow_html=True
-                    )
+                    # Chrome blocks data: URIs in iframes — use download button instead
+                    st.info('PDF preview is not supported in Chrome. Use the download button below to open the file.')
                 if file_bytes:
                     st.download_button(
                         f'📥 Download {drw["original_name"]}',
                         file_bytes, drw['original_name'],
                         key=f'dl_{drw["id"]}',
-                        use_container_width=True
+                        use_container_width=True,
+                        type='primary',
                     )
 
             if role == 'admin':
