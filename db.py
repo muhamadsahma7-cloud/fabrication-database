@@ -56,8 +56,27 @@ class _DBConn:
 
 def _conn():
     import streamlit as st
+    import socket
+    from urllib.parse import urlparse, unquote
+
     url = st.secrets['database_url']
-    conn = psycopg2.connect(url)
+    p = urlparse(url)
+
+    # Resolve hostname to IPv4 — Streamlit Cloud cannot reach Supabase over IPv6
+    host = p.hostname
+    try:
+        host = socket.getaddrinfo(host, None, socket.AF_INET)[0][4][0]
+    except Exception:
+        pass  # fall back to hostname if IPv4 lookup fails
+
+    conn = psycopg2.connect(
+        host=host,
+        port=p.port or 5432,
+        dbname=p.path.lstrip('/'),
+        user=p.username,
+        password=unquote(p.password or ''),
+        sslmode='require',
+    )
     return _DBConn(conn)
 
 
