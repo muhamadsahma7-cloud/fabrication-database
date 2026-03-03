@@ -105,11 +105,11 @@ def show_sidebar():
         if user['role'] == 'viewer':
             pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing']
         elif user['role'] == 'admin':
-            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery',
-                     '📦 Raw Material', '🖼️ Drawing', '⚙️ Manage']
+            pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
+                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing', '⚙️ Manage']
         else:
-            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress', '🚚 Delivery',
-                     '📦 Raw Material', '🖼️ Drawing']
+            pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
+                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing']
 
         default_page = pages[0]
         current = st.session_state.get('page', default_page)
@@ -311,9 +311,15 @@ def page_daily_entry():
             else:
                 st.info('No entries saved today.')
 
-    st.markdown('---')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Page: Daily Manpower
+# ══════════════════════════════════════════════════════════════════════════════
+def page_manpower():
+    st.header('👷 Daily Manpower')
+
     with st.container(border=True):
-        st.subheader('👷 Daily Manpower')
         mp_date  = st.date_input('Date', value=date.today(), key='mp_date')
         existing = db.get_manpower_grid(mp_date)
 
@@ -339,7 +345,7 @@ def page_daily_entry():
                     key=f'mp_{wslug}_{shift_key}', label_visibility='collapsed'
                 )
                 new_grid[wtype][shift_key] = count
-                day_mh       += count * db.SHIFT_HOURS[shift_key]
+                day_mh        += count * db.SHIFT_HOURS[shift_key]
                 total_workers += count
 
         st.caption(f"Manhours for this day: **{day_mh:,.1f} hrs** · "
@@ -1162,6 +1168,8 @@ def main():
 
     if '✏️' in page:
         page_daily_entry()
+    elif '👷' in page:
+        page_manpower()
     elif '📅' in page:
         page_report()
     elif '📊' in page:
