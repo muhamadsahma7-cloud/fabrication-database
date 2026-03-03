@@ -413,7 +413,7 @@ def page_report():
     with wf_cols[0]:
         st.metric('Raw Material Received', f'{rm_total_kg:,.1f} kg')
     with wf_cols[1]:
-        st.metric('Workfront kg', f'{workfront_kg:,.1f} kg',
+        st.metric('FIT UP Workfront kg', f'{workfront_kg:,.1f} kg',
                   f'{rm_total_kg:,.1f} × 90% − {fitup_total:,.1f} FIT UP')
     st.divider()
 
