@@ -523,6 +523,98 @@ def page_progress():
     ]
     st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
 
+    # ── Download Excel ─────────────────────────────────────────────────────────
+    import openpyxl as _xl
+    from openpyxl.styles import Font as _Font, PatternFill as _Fill, Alignment as _Align, Border as _Border, Side as _Side
+
+    prog_wb  = _xl.Workbook()
+    prog_ws  = prog_wb.active
+    prog_ws.title = 'Progress'
+
+    hdr_cols = [
+        ('Assembly Mark',        18, None),
+        ('Sub-Assembly Mark',    22, None),
+        ('Total Weight (kg)',    16, '#,##0.00'),
+        ('Fit Up (kg)',          14, '#,##0.00'),
+        ('Fit Up %',             10, '0.0%'),
+        ('Welding (kg)',         14, '#,##0.00'),
+        ('Welding %',            10, '0.0%'),
+        ('Blast/Paint (kg)',     16, '#,##0.00'),
+        ('Blast/Paint %',        12, '0.0%'),
+        ('Send to Site (kg)',    16, '#,##0.00'),
+        ('Send to Site %',       14, '0.0%'),
+    ]
+
+    hdr_fill = _Fill('solid', fgColor='1E3A5F')
+    hdr_font = _Font(bold=True, color='FFFFFF', size=11)
+    hdr_aln  = _Align(horizontal='center', vertical='center')
+    num_aln  = _Align(horizontal='right',  vertical='center')
+    txt_aln  = _Align(horizontal='left',   vertical='center')
+    thin     = _Side(style='thin', color='CCCCCC')
+    border   = _Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Header row
+    for col_idx, (col_name, col_w, _) in enumerate(hdr_cols, 1):
+        cell = prog_ws.cell(row=1, column=col_idx, value=col_name)
+        cell.fill      = hdr_fill
+        cell.font      = hdr_font
+        cell.alignment = hdr_aln
+        cell.border    = border
+        prog_ws.column_dimensions[cell.column_letter].width = col_w
+
+    prog_ws.row_dimensions[1].height = 20
+
+    def _safe_pct(part, total):
+        try:
+            return min(float(part) / float(total), 1.0) if total else 0.0
+        except Exception:
+            return 0.0
+
+    # Data rows
+    stage_key = {'Fit Up': 'fitup', 'Welding': 'welding',
+                 'Blast/Paint': 'blasting', 'Send to Site': 'sendsite'}
+    for r_idx, r in enumerate(rows, 2):
+        total = r.get('total_weight_kg') or 0
+        fitup    = r.get('fitup')    or 0
+        welding  = r.get('welding')  or 0
+        blasting = r.get('blasting') or 0
+        sendsite = r.get('sendsite') or 0
+
+        row_vals = [
+            r.get('assembly_mark',     ''),
+            r.get('sub_assembly_mark', ''),
+            total,
+            fitup,    _safe_pct(fitup,    total),
+            welding,  _safe_pct(welding,  total),
+            blasting, _safe_pct(blasting, total),
+            sendsite, _safe_pct(sendsite, total),
+        ]
+        row_fill = _Fill('solid', fgColor='F0F4FA') if r_idx % 2 == 0 else _Fill('solid', fgColor='FFFFFF')
+        for col_idx, (val, (_, _, num_fmt)) in enumerate(zip(row_vals, hdr_cols), 1):
+            cell = prog_ws.cell(row=r_idx, column=col_idx, value=val)
+            cell.border    = border
+            cell.fill      = row_fill
+            if num_fmt:
+                cell.number_format = num_fmt
+                cell.alignment     = num_aln
+            else:
+                cell.alignment = txt_aln
+
+    prog_ws.freeze_panes = 'A2'
+    prog_ws.auto_filter.ref = prog_ws.dimensions
+
+    prog_buf = BytesIO()
+    prog_wb.save(prog_buf)
+
+    st.download_button(
+        '📥 Download Excel',
+        prog_buf.getvalue(),
+        f'progress_{date.today()}.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        use_container_width=True,
+        type='primary',
+    )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Page: Delivery
