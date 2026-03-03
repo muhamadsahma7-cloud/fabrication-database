@@ -184,6 +184,16 @@ def page_daily_entry():
                 do_no = st.text_input('D.O. Number *', placeholder='Required for this stage')
             remarks = st.text_area('Remarks', height=70)
 
+            # Live duplicate warning — shown before the button is pressed
+            if mark:
+                _completed     = db.get_completed_stages(mark, sub or '')
+                _queued_stages = {e['stage'] for e in st.session_state.queue
+                                  if e['mark'] == mark.upper() and e['sub'] == (sub or '').upper()}
+                if stage in _completed:
+                    st.warning(f'⚠️ [{stage}] already recorded for this assembly/sub-assembly.')
+                elif stage in _queued_stages:
+                    st.warning(f'⚠️ [{stage}] already in the queue for this assembly/sub-assembly.')
+
             if st.button('➕ Add to Queue', type='primary', use_container_width=True):
                 errors = []
                 if not mark:
@@ -191,12 +201,16 @@ def page_daily_entry():
                 if stage in ('BLASTING & PAINTING', 'SEND TO SITE') and not do_no.strip():
                     errors.append(f'D.O. Number is required for [{stage}].')
                 if mark and not errors:
-                    stage_idx = db.STAGES.index(stage)
-                    if stage_idx > 0:
-                        prev_stage    = db.STAGES[stage_idx - 1]
-                        completed     = db.get_completed_stages(mark, sub or '')
-                        queued_stages = {e['stage'] for e in st.session_state.queue
-                                         if e['mark'] == mark.upper() and e['sub'] == (sub or '').upper()}
+                    stage_idx     = db.STAGES.index(stage)
+                    completed     = db.get_completed_stages(mark, sub or '')
+                    queued_stages = {e['stage'] for e in st.session_state.queue
+                                     if e['mark'] == mark.upper() and e['sub'] == (sub or '').upper()}
+                    if stage in completed:
+                        errors.append(f'[{stage}] has already been recorded for this assembly/sub-assembly.')
+                    elif stage in queued_stages:
+                        errors.append(f'[{stage}] is already in the queue for this assembly/sub-assembly.')
+                    elif stage_idx > 0:
+                        prev_stage = db.STAGES[stage_idx - 1]
                         if prev_stage not in completed and prev_stage not in queued_stages:
                             errors.append(f'"{prev_stage}" must be completed before [{stage}].')
                 if errors:
