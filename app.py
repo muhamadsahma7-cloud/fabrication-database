@@ -27,6 +27,11 @@ STAGE_BADGE = {
     'SEND TO SITE':        '🟠',
 }
 
+@st.cache_data(ttl=120)
+def _get_marks():
+    """Assembly mark list cached for 2 min — avoids a DB round-trip on every rerun."""
+    return _get_marks()
+
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -131,7 +136,7 @@ def page_daily_entry():
     if 'queue' not in st.session_state:
         st.session_state.queue = []
 
-    marks = db.get_marks()
+    marks = _get_marks()
 
     col_form, col_right = st.columns([1, 1.6])
 
@@ -357,14 +362,10 @@ def page_report():
     today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
                       for s in db.STAGES}
 
-    all_fitup   = db.search_progress(stage='FIT UP')
-    all_welding = db.search_progress(stage='WELDING')
-    fitup_total_kg   = sum(r['weight_kg'] for r in all_fitup)
-    welding_total_kg = sum(r['weight_kg'] for r in all_welding)
-    fitup_days   = len({r['entry_date'] for r in all_fitup})
-    welding_days = len({r['entry_date'] for r in all_welding})
-    fitup_avg    = fitup_total_kg   / fitup_days   if fitup_days   else 0
-    welding_avg  = welding_total_kg / welding_days if welding_days else 0
+    # Single aggregate query replaces loading all FIT UP / WELDING rows
+    stage_stats  = db.get_stage_daily_stats()
+    fitup_stats  = stage_stats.get('FIT UP',  {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
+    weld_stats   = stage_stats.get('WELDING', {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
 
     st.markdown(f"**Today's Activity** — {date.today().strftime('%d %b %Y')}")
     tcols = st.columns(len(db.STAGES))
@@ -372,11 +373,13 @@ def page_report():
         with tcols[i]:
             st.metric(f'{STAGE_BADGE[s]} {s}', f'{today_by_stage[s]:,.1f} kg')
             if s == 'FIT UP':
-                st.metric('Avg/Day', f'{fitup_avg:,.1f} kg',
-                          f'{fitup_total_kg:,.1f} kg ÷ {fitup_days} day{"s" if fitup_days!=1 else ""}')
+                d = fitup_stats['days']
+                st.metric('Avg/Day', f'{fitup_stats["avg_per_day"]:,.1f} kg',
+                          f'{fitup_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
             elif s == 'WELDING':
-                st.metric('Avg/Day', f'{welding_avg:,.1f} kg',
-                          f'{welding_total_kg:,.1f} kg ÷ {welding_days} day{"s" if welding_days!=1 else ""}')
+                d = weld_stats['days']
+                st.metric('Avg/Day', f'{weld_stats["avg_per_day"]:,.1f} kg',
+                          f'{weld_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
 
     mh = db.get_manhour_summary()
     today_grid = db.get_manpower_grid(date.today())
@@ -407,7 +410,7 @@ def page_report():
     with c2:
         end = st.date_input('To', value=date.today(), key='rpt_end')
     with c3:
-        asm_filter = st.selectbox('Assembly', ['All'] + db.get_marks(), key='rpt_asm')
+        asm_filter = st.selectbox('Assembly', ['All'] + _get_marks(), key='rpt_asm')
     with c4:
         stage_filter = st.selectbox('Stage', ['All'] + db.STAGES, key='rpt_stage')
 
@@ -1026,7 +1029,7 @@ def page_drawing():
                 drw_date = st.date_input('Date Received', value=date.today(), key='drw_date')
             with uc3:
                 drw_asm  = st.selectbox('Assembly Mark (optional)',
-                                        [''] + db.get_marks(), key='drw_asm')
+                                        [''] + _get_marks(), key='drw_asm')
 
             drw_files = st.file_uploader(
                 'Files (PDF, PNG, JPG) — select one or multiple',
@@ -1061,7 +1064,7 @@ def page_drawing():
     st.divider()
 
     # ── Filter ────────────────────────────────────────────────────────────────
-    filter_asm = st.selectbox('Filter by Assembly', ['All'] + db.get_marks(), key='drw_filter')
+    filter_asm = st.selectbox('Filter by Assembly', ['All'] + _get_marks(), key='drw_filter')
     asm_f      = None if filter_asm == 'All' else filter_asm
     drawings   = db.get_drawings(assembly_mark=asm_f)
 
@@ -1091,28 +1094,33 @@ def page_drawing():
             if meta_parts:
                 st.caption('  ·  '.join(meta_parts))
 
-            file_bytes = bytes(drw['file_data']) if drw.get('file_data') else None
-
-            if not file_bytes:
-                st.warning('File data not found on server.')
-            elif ext in ('png', 'jpg', 'jpeg'):
-                st.image(file_bytes, use_container_width=True)
-            elif ext == 'pdf':
-                b64 = base64.b64encode(file_bytes).decode()
-                st.markdown(
-                    f'<iframe src="data:application/pdf;base64,{b64}" '
-                    f'width="100%" height="700px" style="border:none;"></iframe>',
-                    unsafe_allow_html=True
-                )
-
-            # Download button for all types
-            if file_bytes:
-                st.download_button(
-                    f'📥 Download {drw["original_name"]}',
-                    file_bytes, drw['original_name'],
-                    key=f'dl_{drw["id"]}',
-                    use_container_width=True
-                )
+            # File data loaded on demand — avoids fetching all BYTEAs on list render
+            load_key = f'drw_loaded_{drw["id"]}'
+            if not st.session_state.get(load_key):
+                if st.button('📂 Load Drawing', key=f'load_{drw["id"]}',
+                             use_container_width=True):
+                    st.session_state[load_key] = True
+                    st.rerun()
+            else:
+                file_bytes = db.get_drawing_file(drw['id'])
+                if not file_bytes:
+                    st.warning('File data not found on server.')
+                elif ext in ('png', 'jpg', 'jpeg'):
+                    st.image(file_bytes, use_container_width=True)
+                elif ext == 'pdf':
+                    b64 = base64.b64encode(file_bytes).decode()
+                    st.markdown(
+                        f'<iframe src="data:application/pdf;base64,{b64}" '
+                        f'width="100%" height="700px" style="border:none;"></iframe>',
+                        unsafe_allow_html=True
+                    )
+                if file_bytes:
+                    st.download_button(
+                        f'📥 Download {drw["original_name"]}',
+                        file_bytes, drw['original_name'],
+                        key=f'dl_{drw["id"]}',
+                        use_container_width=True
+                    )
 
             if role == 'admin':
                 if st.button('🗑 Delete', key=f'del_drw_{drw["id"]}', type='secondary'):

@@ -870,6 +870,29 @@ def get_cumulative_by_sub():
     return [dict(r) for r in rows]
 
 
+def get_stage_daily_stats():
+    """Return total_kg and unique day count per stage — single aggregate query."""
+    c = _conn()
+    rows = c.execute("""
+        SELECT stage,
+               COALESCE(SUM(weight_kg), 0)   AS total_kg,
+               COUNT(DISTINCT entry_date)     AS days
+        FROM progress
+        GROUP BY stage
+    """).fetchall()
+    c.close()
+    result = {}
+    for r in rows:
+        days  = r['days']     or 0
+        total = r['total_kg'] or 0
+        result[r['stage']] = {
+            'total_kg':    total,
+            'days':        days,
+            'avg_per_day': total / days if days else 0,
+        }
+    return result
+
+
 def get_summary():
     db = _conn()
     total = db.execute(
@@ -1252,16 +1275,28 @@ def save_drawing(title, assembly_mark, original_name, file_bytes, uploaded_by=''
 
 
 def get_drawings(assembly_mark=None):
+    """Return drawing metadata only — file_data excluded to keep list fast."""
+    _cols = "id, title, original_name, filename, assembly_mark, uploaded_by, created_at, rev_no, date_received"
     c = _conn()
     if assembly_mark:
         rows = c.execute(
-            "SELECT * FROM drawings WHERE assembly_mark=? ORDER BY created_at DESC",
+            f"SELECT {_cols} FROM drawings WHERE assembly_mark=? ORDER BY created_at DESC",
             (assembly_mark,)
         ).fetchall()
     else:
-        rows = c.execute("SELECT * FROM drawings ORDER BY created_at DESC").fetchall()
+        rows = c.execute(
+            f"SELECT {_cols} FROM drawings ORDER BY created_at DESC"
+        ).fetchall()
     c.close()
     return [dict(r) for r in rows]
+
+
+def get_drawing_file(did):
+    """Fetch file_data bytes for a single drawing — called on demand only."""
+    c = _conn()
+    row = c.execute("SELECT file_data FROM drawings WHERE id=?", (did,)).fetchone()
+    c.close()
+    return bytes(row['file_data']) if row and row.get('file_data') else None
 
 
 def delete_drawing(did):
