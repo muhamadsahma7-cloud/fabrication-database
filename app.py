@@ -144,10 +144,10 @@ def show_sidebar():
                      '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing']
 
         default_page = pages[0]
-        current = st.session_state.get('page', default_page)
-        page = st.radio('Navigation', pages, label_visibility='collapsed',
-                        index=pages.index(current) if current in pages else 0)
-        st.session_state.page = page
+        if st.session_state.get('page') not in pages:
+            st.session_state.page = default_page
+        st.radio('Navigation', pages, label_visibility='collapsed',
+                 key='page')
 
         st.divider()
         st.caption(f'📅 {date.today().strftime("%d %B %Y")}')
