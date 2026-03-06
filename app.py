@@ -834,20 +834,24 @@ def page_visual_inspection():
 
             rows = st.session_state.get('vi_rows', [])
             if rows:
-                df = pd.DataFrame(rows)[['id', 'entry_date', 'assembly_mark',
-                                         'sub_assembly_mark', 'weight_kg', 'qty', 'remarks']]
-                df.columns = ['ID', 'Date', 'Assembly', 'Sub-Assembly', 'Weight (kg)', 'Qty', 'Remarks']
-                st.dataframe(df, use_container_width=True, hide_index=True)
-
-                with st.form('vi_delete'):
-                    del_id = st.number_input('Delete entry by ID', min_value=0, step=1, value=0)
-                    if st.form_submit_button('🗑 Delete', type='secondary'):
-                        if del_id > 0:
-                            db.delete_visual_inspection(int(del_id))
-                            _get_visual_inspection_summary.clear()
-                            st.session_state.vi_rows = db.get_visual_inspections()
-                            st.success(f'Deleted entry #{int(del_id)}')
-                            st.rerun()
+                hcols = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
+                for h, label in zip(hcols, ['ID', 'Date', 'Assembly', 'Sub-Assembly',
+                                             'Weight (kg)', 'Qty', 'Remarks', '']):
+                    h.markdown(f'**{label}**')
+                for row in rows:
+                    c = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
+                    c[0].write(row['id'])
+                    c[1].write(row['entry_date'])
+                    c[2].write(row['assembly_mark'])
+                    c[3].write(row['sub_assembly_mark'])
+                    c[4].write(f"{row['weight_kg']:,.2f}")
+                    c[5].write(row['qty'])
+                    c[6].write(row['remarks'])
+                    if c[7].button('🗑', key=f"vi_del_{row['id']}", use_container_width=True):
+                        db.delete_visual_inspection(row['id'])
+                        _get_visual_inspection_summary.clear()
+                        st.session_state.vi_rows = db.get_visual_inspections()
+                        st.rerun()
             else:
                 st.info('Click Load or Show All to view records.')
 
