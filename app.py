@@ -756,25 +756,55 @@ def page_visual_inspection():
             entry_date = st.date_input('Date', value=date.today(), key='vi_date')
             mark = st.selectbox('Assembly Mark', [''] + marks, key='vi_mark')
             subs = _get_sub_assemblies(mark) if mark else []
-            sub = st.selectbox('Sub-Assembly Mark (optional)', [''] + subs, key='vi_sub')
+            subs_selected = st.multiselect(
+                'Sub-Assembly Mark', subs, key='vi_sub',
+                placeholder='Select one or more (empty = whole assembly)')
 
             all_parts = _get_parts(mark) if mark else []
             def _sub_weight(s):
                 pts = [p for p in all_parts if p['sub_assembly_mark'] == s] if s else all_parts
                 return round(sum(p['total_weight_kg'] for p in pts), 2)
 
-            weight_val = _sub_weight(sub) if mark else 0.0
-            weight  = st.number_input('Weight (kg)', value=weight_val, min_value=0.0, format='%.2f', key='vi_weight')
+            if len(subs_selected) >= 2:
+                weights_map = {s: _sub_weight(s) for s in subs_selected}
+                total_w = sum(weights_map.values())
+                st.caption(f"Auto weight: **{total_w:,.2f} kg** total "
+                           f"across {len(subs_selected)} sub-assemblies")
+            else:
+                s0 = subs_selected[0] if subs_selected else ''
+                weight_val = _sub_weight(s0) if mark else 0.0
+                weight = st.number_input('Weight (kg)', value=weight_val, min_value=0.0,
+                                         format='%.2f', key='vi_weight')
+                weights_map = {s0: weight}
+
             qty     = st.number_input('Qty', value=1, min_value=0, step=1, key='vi_qty')
             remarks = st.text_area('Remarks', height=70, key='vi_remarks')
 
             if st.button('💾 Save Inspection', type='primary', use_container_width=True):
+                errors = []
                 if not mark:
-                    st.error('Assembly Mark is required.')
+                    errors.append('Assembly Mark is required.')
                 else:
-                    db.add_visual_inspection(entry_date, mark, sub, weight, qty, remarks)
+                    check_subs = subs_selected if subs_selected else ['']
+                    for s in check_subs:
+                        completed = _get_completed_stages(mark, s)
+                        label = s if s else mark
+                        if 'FIT UP' not in completed:
+                            errors.append(f'{label}: FIT UP not completed.')
+                        elif 'WELDING' not in completed:
+                            errors.append(f'{label}: WELDING not completed.')
+
+                if errors:
+                    for e in errors:
+                        st.error(e)
+                else:
+                    check_subs = subs_selected if subs_selected else ['']
+                    for s in check_subs:
+                        db.add_visual_inspection(entry_date, mark, s,
+                                                 weights_map.get(s, 0.0), qty, remarks)
                     _get_visual_inspection_summary.clear()
-                    st.success(f'Inspection recorded for {mark}.')
+                    n = len(check_subs)
+                    st.success(f'Saved {n} inspection record{"s" if n > 1 else ""}.')
                     st.rerun()
 
     with col_right:
