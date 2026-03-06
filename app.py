@@ -818,11 +818,17 @@ def page_visual_inspection():
 
         with st.container(border=True):
             st.subheader('Inspection Records')
-            c1, c2 = st.columns(2)
-            with c1:
+            f1, f2, f3, f4 = st.columns([1, 1, 1.2, 1.2])
+            with f1:
                 start = st.date_input('From', value=date.today() - timedelta(days=30), key='vi_start')
-            with c2:
+            with f2:
                 end = st.date_input('To', value=date.today(), key='vi_end')
+            with f3:
+                asm_filter = st.selectbox('Assembly', ['All'] + _get_marks(), key='vi_asm_filter')
+            with f4:
+                vi_all_rows = st.session_state.get('vi_rows', [])
+                sub_options = sorted({r['sub_assembly_mark'] for r in vi_all_rows if r['sub_assembly_mark']})
+                sub_filter  = st.selectbox('Sub-Assembly', ['All'] + sub_options, key='vi_sub_filter')
 
             col_b1, col_b2 = st.columns(2)
             with col_b1:
@@ -833,6 +839,10 @@ def page_visual_inspection():
                     st.session_state.vi_rows = db.get_visual_inspections()
 
             rows = st.session_state.get('vi_rows', [])
+            if asm_filter != 'All':
+                rows = [r for r in rows if r['assembly_mark'] == asm_filter]
+            if sub_filter != 'All':
+                rows = [r for r in rows if r['sub_assembly_mark'] == sub_filter]
             if rows:
                 hcols = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
                 for h, label in zip(hcols, ['ID', 'Date', 'Assembly', 'Sub-Assembly',
