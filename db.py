@@ -765,6 +765,28 @@ def add_progress(entry_date, mark, sub_mark, stage, weight, qty, remarks, do_no=
     return rid
 
 
+def add_progress_bulk(entries):
+    """Insert multiple progress rows in a single connection.
+    entries: list of dicts with keys date, mark, sub, stage, weight, qty, remarks, do_no
+    """
+    if not entries:
+        return
+    conn = _conn()
+    rows = [
+        (str(e['date']), e['mark'], e['sub'], e['stage'],
+         float(e['weight']), int(e['qty']), e['remarks'], e['do_no'])
+        for e in entries
+    ]
+    psycopg2.extras.execute_values(
+        conn._conn.cursor(),
+        "INSERT INTO progress (entry_date, assembly_mark, sub_assembly_mark, stage, "
+        "weight_kg, qty, remarks, delivery_order_no) VALUES %s",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+
 def delete_progress(rid):
     db = _conn()
     db.execute("DELETE FROM progress WHERE id = ?", (rid,))

@@ -52,6 +52,18 @@ def _get_raw_material_summary():
 def _get_today_progress(today):
     return db.search_progress(start=str(today), end=str(today))
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_sub_assemblies(mark):
+    return db.get_sub_assemblies(mark)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_parts(mark):
+    return db.get_parts(mark)
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _get_completed_stages(mark, sub):
+    return db.get_completed_stages(mark, sub)
+
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -167,7 +179,7 @@ def page_daily_entry():
             entry_date = st.date_input('Date', value=date.today(), key='entry_date')
             mark = st.selectbox('Assembly Mark', [''] + marks, key='entry_mark')
 
-            subs = db.get_sub_assemblies(mark) if mark else []
+            subs = _get_sub_assemblies(mark) if mark else []
             subs_selected = st.multiselect(
                 'Sub-Assembly Mark', subs, key='entry_sub',
                 placeholder='Select one or more (empty = whole assembly)')
@@ -198,7 +210,7 @@ def page_daily_entry():
             stage = st.session_state.sel_stage
 
             # Auto weight per sub-assembly from parts table
-            all_parts = db.get_parts(mark) if mark else []
+            all_parts = _get_parts(mark) if mark else []
             def _sub_weight(s):
                 pts = [p for p in all_parts if p['sub_assembly_mark'] == s] if s else all_parts
                 return round(sum(p['total_weight_kg'] for p in pts), 2)
@@ -226,7 +238,7 @@ def page_daily_entry():
             if mark:
                 check_subs  = subs_selected if subs_selected else ['']
                 warn_done   = [s for s in check_subs
-                               if stage in db.get_completed_stages(mark, s)]
+                               if stage in _get_completed_stages(mark, s)]
                 warn_queued = [s for s in check_subs
                                if stage in {e['stage'] for e in st.session_state.queue
                                             if e['mark'] == mark.upper() and e['sub'] == s.upper()}]
@@ -249,7 +261,7 @@ def page_daily_entry():
                 if mark and not errors:
                     stage_idx = db.STAGES.index(stage)
                     for s in check_subs:
-                        completed     = db.get_completed_stages(mark, s)
+                        completed     = _get_completed_stages(mark, s)
                         queued_stages = {e['stage'] for e in st.session_state.queue
                                          if e['mark'] == mark.upper() and e['sub'] == s.upper()}
                         label = s if s else mark
@@ -294,11 +306,13 @@ def page_daily_entry():
                 c1, c2 = st.columns(2)
                 with c1:
                     if st.button('💾 Save All', type='primary', use_container_width=True):
-                        for e in st.session_state.queue:
-                            db.add_progress(e['date'], e['mark'], e['sub'], e['stage'],
-                                            e['weight'], e['qty'], e['remarks'], e['do_no'])
                         count = len(st.session_state.queue)
+                        db.add_progress_bulk(st.session_state.queue)
                         st.session_state.queue = []
+                        # Bust caches so updated data shows immediately
+                        _get_today_progress.clear()
+                        _get_stage_daily_stats.clear()
+                        _get_completed_stages.clear()
                         st.success(f'Saved {count} entries.')
                         st.rerun()
                 with c2:
@@ -312,7 +326,7 @@ def page_daily_entry():
 
         with st.container(border=True):
             st.subheader("Today's Saved Entries")
-            today_rows = db.search_progress(start=str(date.today()), end=str(date.today()))
+            today_rows = _get_today_progress(date.today())
             if today_rows:
                 df_t = pd.DataFrame(today_rows)[
                     ['id', 'entry_date', 'assembly_mark', 'sub_assembly_mark',
@@ -326,6 +340,9 @@ def page_daily_entry():
                     if st.form_submit_button('🗑 Delete', type='secondary'):
                         if del_id > 0:
                             db.delete_progress(int(del_id))
+                            _get_today_progress.clear()
+                            _get_stage_daily_stats.clear()
+                            _get_completed_stages.clear()
                             st.success(f'Deleted entry #{int(del_id)}')
                             st.rerun()
             else:
