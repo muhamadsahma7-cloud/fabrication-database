@@ -467,14 +467,17 @@ def page_report():
                   f'{fitup_total:,.1f} FIT UP − {weld_total:,.1f} Welding')
     st.divider()
     st.markdown('**Ready for Delivery to Painting Shop**')
-    vi_summary  = _get_visual_inspection_summary()
-    vi_total_kg = vi_summary.get('total_kg', 0) or 0
-    vi_entries  = vi_summary.get('entries', 0) or 0
+    vi_summary     = _get_visual_inspection_summary()
+    vi_total_kg    = vi_summary.get('total_kg', 0) or 0
+    vi_entries     = vi_summary.get('entries', 0) or 0
+    blast_total    = stage_stats.get('BLASTING & PAINTING', {'total_kg': 0})['total_kg']
+    ready_kg       = vi_total_kg - blast_total
     vi_cols = st.columns(2)
     with vi_cols[0]:
         st.metric('Inspected Assemblies', f'{vi_entries}')
     with vi_cols[1]:
-        st.metric('Ready for Delivery kg', f'{vi_total_kg:,.1f} kg')
+        st.metric('Ready for Delivery kg', f'{ready_kg:,.1f} kg',
+                  f'{vi_total_kg:,.1f} inspected − {blast_total:,.1f} sent to B&P')
     st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)
