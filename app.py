@@ -32,6 +32,26 @@ def _get_marks():
     """Assembly mark list cached for 2 min — avoids a DB round-trip on every rerun."""
     return db.get_marks()
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_stage_daily_stats():
+    return db.get_stage_daily_stats()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_manhour_summary():
+    return db.get_manhour_summary()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_manpower_grid(today):
+    return db.get_manpower_grid(today)
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_raw_material_summary():
+    return db.get_raw_material_summary()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_today_progress(today):
+    return db.search_progress(start=str(today), end=str(today))
+
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -364,12 +384,12 @@ def page_report():
     st.header('📅 Report')
 
     # ── Today's Activity ──────────────────────────────────────────────────────
-    today_rows = db.search_progress(start=str(date.today()), end=str(date.today()))
+    today_rows = _get_today_progress(date.today())
     today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
                       for s in db.STAGES}
 
     # Single aggregate query replaces loading all FIT UP / WELDING rows
-    stage_stats  = db.get_stage_daily_stats()
+    stage_stats  = _get_stage_daily_stats()
     fitup_stats  = stage_stats.get('FIT UP',  {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
     weld_stats   = stage_stats.get('WELDING', {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
 
@@ -387,8 +407,8 @@ def page_report():
                 st.metric('Avg/Day', f'{weld_stats["avg_per_day"]:,.1f} kg',
                           f'{weld_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
 
-    mh = db.get_manhour_summary()
-    today_grid = db.get_manpower_grid(date.today())
+    mh = _get_manhour_summary()
+    today_grid = _get_manpower_grid(date.today())
     today_mh   = sum(
         count * db.SHIFT_HOURS[sk]
         for shifts in today_grid.values()
@@ -408,7 +428,7 @@ def page_report():
         st.metric('Total Manhours', f"{mh['total_manhours']:,.1f} hrs")
 
     # Workfront kg = raw material total kg received × 90% − total FIT UP done
-    rm_total_kg  = db.get_raw_material_summary().get('total_kg', 0) or 0
+    rm_total_kg  = _get_raw_material_summary().get('total_kg', 0) or 0
     fitup_total  = fitup_stats['total_kg']
     workfront_kg = rm_total_kg * 0.90 - fitup_total
     st.divider()
