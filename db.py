@@ -226,6 +226,7 @@ def init():
 
     db.close()
     init_raw_materials()
+    init_visual_inspection()
     init_sessions()
 
 
@@ -1122,6 +1123,73 @@ def export_excel(rows, path):
         max_len = max((len(str(c.value or '')) for c in col), default=0)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
     wb.save(path)
+
+
+# ── Visual Inspection ─────────────────────────────────────────────────────────
+
+def init_visual_inspection():
+    c = _conn()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS visual_inspection (
+            id                SERIAL PRIMARY KEY,
+            entry_date        TEXT NOT NULL,
+            assembly_mark     TEXT DEFAULT '',
+            sub_assembly_mark TEXT DEFAULT '',
+            weight_kg         DOUBLE PRECISION DEFAULT 0,
+            qty               INTEGER DEFAULT 1,
+            remarks           TEXT DEFAULT '',
+            created_at        TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+    c.commit()
+    c.close()
+
+
+def add_visual_inspection(entry_date, mark, sub_mark, weight_kg, qty, remarks=''):
+    c = _conn()
+    cur = c.execute(
+        "INSERT INTO visual_inspection (entry_date, assembly_mark, sub_assembly_mark, "
+        "weight_kg, qty, remarks) VALUES (?,?,?,?,?,?) RETURNING id",
+        (str(entry_date), mark.strip().upper(), sub_mark.strip().upper(),
+         float(weight_kg), int(qty), remarks.strip())
+    )
+    rid = cur.lastrowid
+    c.commit()
+    c.close()
+    return rid
+
+
+def get_visual_inspections(start=None, end=None):
+    c = _conn()
+    if start and end:
+        rows = c.execute(
+            "SELECT * FROM visual_inspection WHERE entry_date BETWEEN ? AND ? "
+            "ORDER BY entry_date DESC, id DESC",
+            (str(start), str(end))
+        ).fetchall()
+    else:
+        rows = c.execute(
+            "SELECT * FROM visual_inspection ORDER BY entry_date DESC, id DESC"
+        ).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
+def get_visual_inspection_summary():
+    c = _conn()
+    row = c.execute(
+        "SELECT COUNT(*) as entries, COALESCE(SUM(weight_kg),0) as total_kg "
+        "FROM visual_inspection"
+    ).fetchone()
+    c.close()
+    return dict(row) if row else {'entries': 0, 'total_kg': 0}
+
+
+def delete_visual_inspection(rid):
+    c = _conn()
+    c.execute("DELETE FROM visual_inspection WHERE id=?", (rid,))
+    c.commit()
+    c.close()
 
 
 # ── Session / Online Tracking ──────────────────────────────────────────────────

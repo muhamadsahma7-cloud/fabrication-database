@@ -64,6 +64,10 @@ def _get_parts(mark):
 def _get_completed_stages(mark, sub):
     return db.get_completed_stages(mark, sub)
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_visual_inspection_summary():
+    return db.get_visual_inspection_summary()
+
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -135,13 +139,15 @@ def show_sidebar():
         st.divider()
 
         if user['role'] == 'viewer':
-            pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing']
+            pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material',
+                     '🖼️ Drawing', '🔍 Visual Inspection']
         elif user['role'] == 'admin':
             pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
-                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing', '⚙️ Manage']
+                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing',
+                     '🔍 Visual Inspection', '⚙️ Manage']
         else:
             pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
-                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing']
+                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing', '🔍 Visual Inspection']
 
         default_page = pages[0]
         if st.session_state.get('page') not in pages:
@@ -460,6 +466,16 @@ def page_report():
         st.metric('Welding Workfront kg', f'{welding_workfront_kg:,.1f} kg',
                   f'{fitup_total:,.1f} FIT UP − {weld_total:,.1f} Welding')
     st.divider()
+    st.markdown('**Ready for Delivery to Painting Shop**')
+    vi_summary  = _get_visual_inspection_summary()
+    vi_total_kg = vi_summary.get('total_kg', 0) or 0
+    vi_entries  = vi_summary.get('entries', 0) or 0
+    vi_cols = st.columns(2)
+    with vi_cols[0]:
+        st.metric('Inspected Assemblies', f'{vi_entries}')
+    with vi_cols[1]:
+        st.metric('Ready for Delivery kg', f'{vi_total_kg:,.1f} kg')
+    st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)
     summary_container = st.container()
@@ -719,6 +735,88 @@ def page_delivery():
                                use_container_width=True)
     else:
         st.info('No delivery records in this date range.')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Page: Visual Inspection
+# ══════════════════════════════════════════════════════════════════════════════
+def page_visual_inspection():
+    st.header('🔍 Visual Inspection')
+
+    marks = _get_marks()
+
+    col_form, col_right = st.columns([1, 1.6])
+
+    with col_form:
+        with st.container(border=True):
+            st.subheader('Record Inspection')
+            entry_date = st.date_input('Date', value=date.today(), key='vi_date')
+            mark = st.selectbox('Assembly Mark', [''] + marks, key='vi_mark')
+            subs = _get_sub_assemblies(mark) if mark else []
+            sub = st.selectbox('Sub-Assembly Mark (optional)', [''] + subs, key='vi_sub')
+
+            all_parts = _get_parts(mark) if mark else []
+            def _sub_weight(s):
+                pts = [p for p in all_parts if p['sub_assembly_mark'] == s] if s else all_parts
+                return round(sum(p['total_weight_kg'] for p in pts), 2)
+
+            weight_val = _sub_weight(sub) if mark else 0.0
+            weight  = st.number_input('Weight (kg)', value=weight_val, min_value=0.0, format='%.2f', key='vi_weight')
+            qty     = st.number_input('Qty', value=1, min_value=0, step=1, key='vi_qty')
+            remarks = st.text_area('Remarks', height=70, key='vi_remarks')
+
+            if st.button('💾 Save Inspection', type='primary', use_container_width=True):
+                if not mark:
+                    st.error('Assembly Mark is required.')
+                else:
+                    db.add_visual_inspection(entry_date, mark, sub, weight, qty, remarks)
+                    _get_visual_inspection_summary.clear()
+                    st.success(f'Inspection recorded for {mark}.')
+                    st.rerun()
+
+    with col_right:
+        with st.container(border=True):
+            summ = db.get_visual_inspection_summary()
+            s1, s2 = st.columns(2)
+            s1.metric('Total Inspected', f"{summ['entries']} assemblies")
+            s2.metric('Total kg Inspected', f"{summ['total_kg']:,.1f} kg")
+
+        st.markdown('---')
+
+        with st.container(border=True):
+            st.subheader('Inspection Records')
+            c1, c2 = st.columns(2)
+            with c1:
+                start = st.date_input('From', value=date.today() - timedelta(days=30), key='vi_start')
+            with c2:
+                end = st.date_input('To', value=date.today(), key='vi_end')
+
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button('🔍 Load by Date', use_container_width=True):
+                    st.session_state.vi_rows = db.get_visual_inspections(str(start), str(end))
+            with col_b2:
+                if st.button('📋 Show All', use_container_width=True):
+                    st.session_state.vi_rows = db.get_visual_inspections()
+
+            rows = st.session_state.get('vi_rows', [])
+            if rows:
+                df = pd.DataFrame(rows)[['id', 'entry_date', 'assembly_mark',
+                                         'sub_assembly_mark', 'weight_kg', 'qty', 'remarks']]
+                df.columns = ['ID', 'Date', 'Assembly', 'Sub-Assembly', 'Weight (kg)', 'Qty', 'Remarks']
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                with st.form('vi_delete'):
+                    del_id = st.number_input('Delete entry by ID', min_value=0, step=1, value=0)
+                    if st.form_submit_button('🗑 Delete', type='secondary'):
+                        if del_id > 0:
+                            db.delete_visual_inspection(int(del_id))
+                            _get_visual_inspection_summary.clear()
+                            st.session_state.vi_rows = db.get_visual_inspections()
+                            st.success(f'Deleted entry #{int(del_id)}')
+                            st.rerun()
+            else:
+                st.info('Click Load or Show All to view records.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1253,7 +1351,7 @@ def page_drawing():
 
 
 @st.cache_resource(show_spinner='Connecting to database…')
-def _init_db(_schema_v=4):
+def _init_db(_schema_v=5):
     """Run schema init once per server lifecycle. Increment _schema_v to bust cache."""
     db.init()
 
@@ -1311,6 +1409,8 @@ def main():
         page_raw_material()
     elif '🖼️' in page:
         page_drawing()
+    elif '🔍' in page:
+        page_visual_inspection()
     elif '⚙️' in page:
         page_manage()
 
