@@ -938,6 +938,36 @@ def get_cumulative_by_sub(work_order=None):
     return [dict(r) for r in rows]
 
 
+def get_daily_production():
+    """Return kg produced per entry_date per stage — for trend and S-curve charts."""
+    c = _conn()
+    rows = c.execute("""
+        SELECT entry_date, stage, COALESCE(SUM(weight_kg), 0) AS kg
+        FROM progress
+        GROUP BY entry_date, stage
+        ORDER BY entry_date, stage
+    """).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
+def get_daily_manhours():
+    """Return total manhours per entry_date from manpower_detail."""
+    c = _conn()
+    rows = c.execute("""
+        SELECT entry_date, shift, COALESCE(SUM(count), 0) AS headcount
+        FROM manpower_detail
+        GROUP BY entry_date, shift
+        ORDER BY entry_date
+    """).fetchall()
+    c.close()
+    result = {}
+    for r in rows:
+        d = r['entry_date']
+        result[d] = result.get(d, 0) + r['headcount'] * SHIFT_HOURS.get(r['shift'], 0)
+    return [{'entry_date': k, 'manhours': v} for k, v in sorted(result.items())]
+
+
 def get_stage_daily_stats():
     """Return total_kg and unique day count per stage — single aggregate query."""
     c = _conn()

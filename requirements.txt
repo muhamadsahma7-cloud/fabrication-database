@@ -5,3 +5,4 @@ psycopg2-binary>=2.9.0
 qrcode>=7.4
 Pillow>=10.0.0
 pyzbar>=0.1.9
+plotly>=5.0.0

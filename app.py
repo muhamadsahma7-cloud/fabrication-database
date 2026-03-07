@@ -154,15 +154,16 @@ def show_sidebar():
         st.divider()
 
         if user['role'] == 'viewer':
-            pages = ['📅 Report', '📊 Progress', '🚚 Delivery', '📦 Raw Material',
-                     '🖼️ Drawing', '🔍 Visual Inspection']
+            pages = ['📅 Report', '📊 Progress', '📈 Summary', '🚚 Delivery',
+                     '📦 Raw Material', '🖼️ Drawing', '🔍 Visual Inspection']
         elif user['role'] == 'admin':
             pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
-                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing',
+                     '📈 Summary', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing',
                      '🔍 Visual Inspection', '⚙️ Manage']
         else:
             pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
-                     '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing', '🔍 Visual Inspection']
+                     '📈 Summary', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing',
+                     '🔍 Visual Inspection']
 
         default_page = pages[0]
         if st.session_state.get('page') not in pages:
@@ -1406,6 +1407,180 @@ def page_raw_material():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Page: Progress Summary
+# ══════════════════════════════════════════════════════════════════════════════
+def page_summary():
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    st.header('📈 Progress Summary')
+
+    # ── Load data ──────────────────────────────────────────────────────────────
+    summary    = db.get_summary()
+    mh_summary = db.get_manhour_summary()
+    daily_prod = db.get_daily_production()
+    daily_mh   = db.get_daily_manhours()
+
+    project_total = summary.get('total', 0) or 0
+    stage_done    = {s: summary.get(s, 0) or 0 for s in db.STAGES}
+    overall_done  = sum(stage_done.values())
+    overall_pct   = min(overall_done / project_total * 100, 100) if project_total else 0
+    total_mh      = mh_summary.get('total_manhours', 0) or 0
+    productivity  = overall_done / total_mh if total_mh else 0
+
+    # ── KPI row ────────────────────────────────────────────────────────────────
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric('Total Tonnage (kg)',    f'{project_total:,.1f}')
+    k2.metric('Overall Completion',    f'{overall_pct:.1f}%',    f'{overall_done:,.1f} kg done')
+    k3.metric('Total Manhours',        f'{total_mh:,.1f} hrs',   f'{mh_summary.get("total_days",0)} days logged')
+    k4.metric('Productivity',          f'{productivity:.3f} kg/hr', 'output per manhour')
+
+    st.divider()
+
+    # ── Stage Progress (planned vs actual horizontal bars) ─────────────────────
+    st.subheader('Stage Progress')
+    stage_df = pd.DataFrame({
+        'Stage':   db.STAGES,
+        'Actual':  [stage_done[s] for s in db.STAGES],
+        'Planned': [project_total] * len(db.STAGES),
+    })
+    stage_df['% Done'] = stage_df.apply(
+        lambda r: min(r['Actual'] / r['Planned'] * 100, 100) if r['Planned'] else 0, axis=1
+    )
+
+    fig_stage = go.Figure()
+    fig_stage.add_trace(go.Bar(
+        name='Planned', y=stage_df['Stage'], x=stage_df['Planned'],
+        orientation='h', marker_color='#D0D8E8',
+    ))
+    fig_stage.add_trace(go.Bar(
+        name='Actual', y=stage_df['Stage'], x=stage_df['Actual'],
+        orientation='h', marker_color='#1E3A5F',
+        text=[f"{p:.1f}%" for p in stage_df['% Done']],
+        textposition='inside', insidetextanchor='start',
+    ))
+    fig_stage.update_layout(
+        barmode='overlay', height=220, margin=dict(l=0, r=0, t=10, b=10),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02),
+        xaxis_title='Weight (kg)', yaxis_title='',
+    )
+    st.plotly_chart(fig_stage, use_container_width=True)
+
+    st.divider()
+
+    col_l, col_r = st.columns(2)
+
+    # ── Daily Production Trend (stacked area) ──────────────────────────────────
+    with col_l:
+        st.subheader('Daily Production Trend')
+        if daily_prod:
+            dp_df = pd.DataFrame(daily_prod)
+            dp_df['entry_date'] = pd.to_datetime(dp_df['entry_date'])
+            dp_pivot = dp_df.pivot_table(
+                index='entry_date', columns='stage', values='kg', aggfunc='sum', fill_value=0
+            ).reset_index()
+            # keep only stages that exist as columns
+            stage_cols = [s for s in db.STAGES if s in dp_pivot.columns]
+            colours = ['#4C78A8', '#F58518', '#E45756', '#72B7B2']
+            fig_trend = go.Figure()
+            for i, s in enumerate(stage_cols):
+                fig_trend.add_trace(go.Scatter(
+                    x=dp_pivot['entry_date'], y=dp_pivot[s],
+                    name=s, mode='lines', stackgroup='one',
+                    line=dict(width=0.5),
+                    fillcolor=colours[i % len(colours)],
+                ))
+            fig_trend.update_layout(
+                height=300, margin=dict(l=0, r=0, t=10, b=10),
+                xaxis_title='Date', yaxis_title='kg/day',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
+        else:
+            st.info('No production data yet.')
+
+    # ── Cumulative S-Curve ─────────────────────────────────────────────────────
+    with col_r:
+        st.subheader('Cumulative S-Curve')
+        if daily_prod:
+            sc_df = pd.DataFrame(daily_prod)
+            sc_df['entry_date'] = pd.to_datetime(sc_df['entry_date'])
+            sc_total = sc_df.groupby('entry_date')['kg'].sum().reset_index()
+            sc_total = sc_total.sort_values('entry_date')
+            sc_total['cumulative_kg'] = sc_total['kg'].cumsum()
+
+            # straight-line planned baseline
+            if len(sc_total) >= 2:
+                start_dt = sc_total['entry_date'].iloc[0]
+                end_dt   = sc_total['entry_date'].iloc[-1]
+                plan_dates = pd.date_range(start_dt, end_dt)
+                plan_kg    = pd.Series(
+                    [project_total * i / (len(plan_dates) - 1) for i in range(len(plan_dates))],
+                    index=plan_dates,
+                )
+            else:
+                plan_dates, plan_kg = [], []
+
+            fig_sc = go.Figure()
+            if len(plan_dates):
+                fig_sc.add_trace(go.Scatter(
+                    x=plan_dates, y=plan_kg,
+                    name='Planned', mode='lines',
+                    line=dict(color='#AAAAAA', dash='dot', width=2),
+                ))
+            fig_sc.add_trace(go.Scatter(
+                x=sc_total['entry_date'], y=sc_total['cumulative_kg'],
+                name='Actual', mode='lines+markers',
+                line=dict(color='#1E3A5F', width=2),
+                marker=dict(size=4),
+            ))
+            fig_sc.update_layout(
+                height=300, margin=dict(l=0, r=0, t=10, b=10),
+                xaxis_title='Date', yaxis_title='Cumulative kg',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            )
+            st.plotly_chart(fig_sc, use_container_width=True)
+        else:
+            st.info('No production data yet.')
+
+    st.divider()
+
+    # ── Manhour vs Production (dual axis) ──────────────────────────────────────
+    st.subheader('Manhour vs Production')
+    if daily_prod and daily_mh:
+        mh_df  = pd.DataFrame(daily_mh)
+        mh_df['entry_date'] = pd.to_datetime(mh_df['entry_date'])
+
+        prod_daily = pd.DataFrame(daily_prod)
+        prod_daily['entry_date'] = pd.to_datetime(prod_daily['entry_date'])
+        prod_day   = prod_daily.groupby('entry_date')['kg'].sum().reset_index()
+        prod_day.columns = ['entry_date', 'kg']
+
+        merged = pd.merge(mh_df, prod_day, on='entry_date', how='outer').fillna(0)
+        merged = merged.sort_values('entry_date')
+
+        fig_mh = go.Figure()
+        fig_mh.add_trace(go.Bar(
+            x=merged['entry_date'], y=merged['manhours'],
+            name='Manhours (hrs)', marker_color='#AEC6E8', yaxis='y1',
+        ))
+        fig_mh.add_trace(go.Scatter(
+            x=merged['entry_date'], y=merged['kg'],
+            name='Production (kg)', mode='lines+markers',
+            line=dict(color='#E45756', width=2), marker=dict(size=5), yaxis='y2',
+        ))
+        fig_mh.update_layout(
+            height=320, margin=dict(l=0, r=0, t=10, b=10),
+            yaxis=dict(title='Manhours (hrs)', showgrid=False),
+            yaxis2=dict(title='Production (kg)', overlaying='y', side='right', showgrid=False),
+            legend=dict(orientation='h', yanchor='bottom', y=1.02),
+            barmode='group',
+        )
+        st.plotly_chart(fig_mh, use_container_width=True)
+    else:
+        st.info('No manhour or production data yet.')
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Page: Drawing
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1563,6 +1738,8 @@ def main():
         page_report()
     elif '📊' in page:
         page_progress()
+    elif '📈' in page:
+        page_summary()
     elif '🚚' in page:
         page_delivery()
     elif '📦' in page:
