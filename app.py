@@ -262,17 +262,25 @@ def page_daily_entry():
                 return round(sum(p['total_weight_kg'] for p in pts), 2)
 
             if len(subs_selected) >= 2:
-                # Multiple subs — auto-calc each, no single override field
+                # Multiple subs — auto-calc each
                 weights_map = {s: _sub_weight(s) for s in subs_selected}
                 total_w = sum(weights_map.values())
-                st.caption(f"Auto weight: **{total_w:,.2f} kg** total "
-                           f"across {len(subs_selected)} sub-assemblies")
+                st.metric('Weight (kg)', f'{total_w:,.2f}')
+                st.caption(f'Auto-filled · {len(subs_selected)} sub-assemblies')
+                with st.expander('Override weight'):
+                    for s in subs_selected:
+                        weights_map[s] = st.number_input(
+                            s or mark, value=weights_map[s], min_value=0.0,
+                            format='%.2f', key=f'wt_ovr_{s}')
             else:
-                # 0 or 1 sub — show editable weight field
                 s0 = subs_selected[0] if subs_selected else ''
                 weight_val = _sub_weight(s0) if mark else 0.0
-                weight = st.number_input('Weight (kg)', value=weight_val, min_value=0.0, format='%.2f')
-                weights_map = {s0: weight}
+                st.metric('Weight (kg)', f'{weight_val:,.2f}')
+                st.caption('Auto-filled from parts data')
+                with st.expander('Override weight'):
+                    weight_val = st.number_input('Weight (kg)', value=weight_val,
+                                                 min_value=0.0, format='%.2f', key='wt_ovr_single')
+                weights_map = {s0: weight_val}
 
             qty     = st.number_input('Qty', value=1, min_value=0, step=1)
             do_no   = ''
