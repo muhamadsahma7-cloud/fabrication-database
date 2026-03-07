@@ -90,7 +90,8 @@ def init():
         CREATE TABLE IF NOT EXISTS assemblies (
             assembly_mark   TEXT PRIMARY KEY,
             total_weight_kg DOUBLE PRECISION DEFAULT 0,
-            description     TEXT DEFAULT ''
+            description     TEXT DEFAULT '',
+            work_order      TEXT DEFAULT '001'
         )
     """)
     db.execute("""
@@ -130,9 +131,10 @@ def init():
 
     # Idempotent column migrations
     for col_sql in [
-        "ALTER TABLE progress ADD COLUMN IF NOT EXISTS sub_assembly_mark TEXT DEFAULT ''",
-        "ALTER TABLE progress ADD COLUMN IF NOT EXISTS delivery_order_no TEXT DEFAULT ''",
-        "ALTER TABLE parts    ADD COLUMN IF NOT EXISTS remark TEXT DEFAULT ''",
+        "ALTER TABLE progress   ADD COLUMN IF NOT EXISTS sub_assembly_mark TEXT DEFAULT ''",
+        "ALTER TABLE progress   ADD COLUMN IF NOT EXISTS delivery_order_no TEXT DEFAULT ''",
+        "ALTER TABLE parts      ADD COLUMN IF NOT EXISTS remark TEXT DEFAULT ''",
+        "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS work_order TEXT DEFAULT '001'",
     ]:
         db.execute(col_sql)
     db.commit()
@@ -521,11 +523,12 @@ def import_excel(file_source):
         ]
 
         # ── Pass 1: parse entire Excel into memory lists ──────────────────────
-        asm_order    = []          # insertion order preserved
-        asm_set      = set()
-        parts_rows   = []          # list of 12-tuples for bulk INSERT
-        asm_weights  = {}          # asm -> total kg
-        progress_map = {}          # (asm, sub, stage) -> (total_kg, date_str)
+        asm_order      = []        # insertion order preserved
+        asm_set        = set()
+        parts_rows     = []        # list of 12-tuples for bulk INSERT
+        asm_weights    = {}        # asm -> total kg
+        asm_work_orders = {}       # asm -> work_order
+        progress_map   = {}        # (asm, sub, stage) -> (total_kg, date_str)
 
         for row in rows[header_row + 1:]:
             if not row or not _get(row, 'Assembly Mark'):
@@ -543,10 +546,12 @@ def import_excel(file_source):
             prof2  = str(_get(row, 'Profile 2', 'Profile2', default='') or '').strip()
             grade  = str(_get(row, 'Grade', default='') or '').strip()
             remark = str(_get(row, 'Remark', default='') or '').strip()
+            wo     = str(_get(row, 'Work Order', 'Work_Order', 'WO', default='001') or '001').strip()
 
             if asm not in asm_set:
                 asm_order.append(asm)
                 asm_set.add(asm)
+                asm_work_orders[asm] = wo
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
             parts_rows.append((asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark))
 
@@ -574,12 +579,13 @@ def import_excel(file_source):
         raw = db._conn   # underlying psycopg2 connection
         cur = raw.cursor()
 
-        # 1. Assemblies — all 478 in one statement; include final weights
+        # 1. Assemblies — all in one statement; include final weights and work_order
         psycopg2.extras.execute_values(
             cur,
-            "INSERT INTO assemblies (assembly_mark, total_weight_kg) VALUES %s "
-            "ON CONFLICT(assembly_mark) DO UPDATE SET total_weight_kg = EXCLUDED.total_weight_kg",
-            [(asm, asm_weights[asm]) for asm in asm_order],
+            "INSERT INTO assemblies (assembly_mark, total_weight_kg, work_order) VALUES %s "
+            "ON CONFLICT(assembly_mark) DO UPDATE SET total_weight_kg = EXCLUDED.total_weight_kg, "
+            "work_order = EXCLUDED.work_order",
+            [(asm, asm_weights[asm], asm_work_orders.get(asm, '001')) for asm in asm_order],
         )
         raw.commit()
 
@@ -626,12 +632,38 @@ def import_excel(file_source):
         return 0, 0, str(e)
 
 
-def add_assembly(mark, weight, desc=''):
+def get_work_orders():
+    """Return sorted list of distinct work_order values from assemblies."""
+    db = _conn()
+    rows = db.execute(
+        "SELECT DISTINCT work_order FROM assemblies WHERE work_order != '' ORDER BY work_order"
+    ).fetchall()
+    db.close()
+    return [r['work_order'] for r in rows]
+
+
+def get_marks_by_work_order(work_order=None):
+    """Return assembly marks optionally filtered by work_order."""
+    db = _conn()
+    if work_order:
+        rows = db.execute(
+            "SELECT assembly_mark FROM assemblies WHERE work_order = ? ORDER BY assembly_mark",
+            (work_order,)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT assembly_mark FROM assemblies ORDER BY assembly_mark"
+        ).fetchall()
+    db.close()
+    return [r['assembly_mark'] for r in rows]
+
+
+def add_assembly(mark, weight, desc='', work_order='001'):
     db = _conn()
     db.execute(
-        "INSERT INTO assemblies (assembly_mark, total_weight_kg, description) VALUES (?, ?, ?) "
+        "INSERT INTO assemblies (assembly_mark, total_weight_kg, description, work_order) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(assembly_mark) DO NOTHING",
-        (mark.strip().upper(), weight, desc)
+        (mark.strip().upper(), weight, desc, work_order.strip())
     )
     db.commit()
     db.close()
@@ -845,37 +877,49 @@ def get_cumulative():
     return [dict(r) for r in rows]
 
 
-def get_cumulative_by_sub():
+def get_cumulative_by_sub(work_order=None):
     """Progress grouped by (assembly, sub-assembly).
     Total weight comes from the sub-assembly's parts weight.
     Assemblies with no sub-assemblies fall back to assembly-level totals.
     """
     db = _conn()
-    rows = db.execute("""
+    params = []
+    wo_filter1 = ''
+    wo_filter2 = ''
+    if work_order:
+        wo_filter1 = 'AND a2.work_order = ?'
+        wo_filter2 = 'AND a.work_order = ?'
+        params = [work_order, work_order]
+    rows = db.execute(f"""
         SELECT
             sp.assembly_mark,
             sp.sub_assembly_mark,
+            sp.work_order,
             sp.sub_weight AS total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
             COALESCE(SUM(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.weight_kg END), 0) AS blasting,
             COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite
         FROM (
-            SELECT assembly_mark, sub_assembly_mark, SUM(total_weight_kg) AS sub_weight
-            FROM parts
-            WHERE sub_assembly_mark != ''
-            GROUP BY assembly_mark, sub_assembly_mark
+            SELECT pt.assembly_mark, pt.sub_assembly_mark,
+                   a2.work_order, SUM(pt.total_weight_kg) AS sub_weight
+            FROM parts pt
+            JOIN assemblies a2 ON pt.assembly_mark = a2.assembly_mark
+            WHERE pt.sub_assembly_mark != ''
+            {wo_filter1}
+            GROUP BY pt.assembly_mark, pt.sub_assembly_mark, a2.work_order
         ) sp
         LEFT JOIN progress p
             ON sp.assembly_mark = p.assembly_mark
            AND sp.sub_assembly_mark = p.sub_assembly_mark
-        GROUP BY sp.assembly_mark, sp.sub_assembly_mark, sp.sub_weight
+        GROUP BY sp.assembly_mark, sp.sub_assembly_mark, sp.work_order, sp.sub_weight
 
         UNION ALL
 
         SELECT
             a.assembly_mark,
             '' AS sub_assembly_mark,
+            a.work_order,
             a.total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
@@ -886,9 +930,10 @@ def get_cumulative_by_sub():
         WHERE a.assembly_mark NOT IN (
             SELECT DISTINCT assembly_mark FROM parts WHERE sub_assembly_mark != ''
         )
-        GROUP BY a.assembly_mark, a.total_weight_kg
+        {wo_filter2}
+        GROUP BY a.assembly_mark, a.work_order, a.total_weight_kg
         ORDER BY 1, 2
-    """).fetchall()
+    """, params).fetchall()
     db.close()
     return [dict(r) for r in rows]
 
@@ -947,10 +992,12 @@ def get_sub_assemblies(assembly_mark):
 def get_deliveries():
     db = _conn()
     rows = db.execute(
-        "SELECT entry_date, assembly_mark, sub_assembly_mark, stage, "
-        "delivery_order_no, weight_kg, qty, remarks "
-        "FROM progress WHERE stage IN ('BLASTING & PAINTING','SEND TO SITE') "
-        "ORDER BY entry_date DESC, assembly_mark"
+        "SELECT p.entry_date, a.work_order, p.assembly_mark, p.sub_assembly_mark, p.stage, "
+        "p.delivery_order_no, p.weight_kg, p.qty, p.remarks "
+        "FROM progress p "
+        "JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
+        "WHERE p.stage IN ('BLASTING & PAINTING','SEND TO SITE') "
+        "ORDER BY p.entry_date DESC, p.assembly_mark"
     ).fetchall()
     db.close()
     return [dict(r) for r in rows]
@@ -976,6 +1023,7 @@ def get_master_export():
     db = _conn()
     rows = db.execute("""
         SELECT
+            a.work_order           AS "Work Order",
             p.assembly_mark        AS "Assembly Mark",
             p.sub_assembly_mark    AS "Sub Assembly",
             p.part_mark            AS "Part Mark",
@@ -997,6 +1045,7 @@ def get_master_export():
             CASE WHEN pr.sendsite_done = 1 THEN p.total_weight_kg ELSE 0 END AS "SEND TO SITE (kg)",
             pr.sendsite_dates                                                AS "SEND TO SITE Date"
         FROM parts p
+        JOIN assemblies a ON p.assembly_mark = a.assembly_mark
         LEFT JOIN (
             SELECT
                 assembly_mark,
@@ -1053,8 +1102,8 @@ def search_parts(keyword='', assembly_mark=None):
     return [dict(r) for r in rows]
 
 
-def search_progress(keyword='', stage=None, assembly_mark=None, start=None, end=None):
-    """Search progress entries by keyword, stage, assembly and/or date range."""
+def search_progress(keyword='', stage=None, assembly_mark=None, start=None, end=None, work_order=None):
+    """Search progress entries by keyword, stage, assembly, date range, and/or work_order."""
     db = _conn()
     kw = f'%{keyword}%'
     conditions = ["(p.assembly_mark ILIKE ? OR p.remarks ILIKE ?)"]
@@ -1071,9 +1120,12 @@ def search_progress(keyword='', stage=None, assembly_mark=None, start=None, end=
     if end:
         conditions.append("p.entry_date <= ?")
         params.append(str(end))
+    if work_order:
+        conditions.append("a.work_order = ?")
+        params.append(work_order)
     where = " AND ".join(conditions)
     rows = db.execute(f"""
-        SELECT p.*, a.total_weight_kg as asm_total
+        SELECT p.*, a.total_weight_kg as asm_total, a.work_order
         FROM progress p
         JOIN assemblies a ON p.assembly_mark = a.assembly_mark
         WHERE {where}

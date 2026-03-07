@@ -40,6 +40,14 @@ def _get_marks():
     return db.get_marks()
 
 @st.cache_data(ttl=120, show_spinner=False)
+def _get_work_orders():
+    return db.get_work_orders()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_marks_by_work_order(work_order):
+    return db.get_marks_by_work_order(work_order)
+
+@st.cache_data(ttl=120, show_spinner=False)
 def _get_stage_daily_stats():
     return db.get_stage_daily_stats()
 
@@ -250,7 +258,10 @@ def page_daily_entry():
                         status_cols[i].markdown(f'{icon} **{s}**')
 
             entry_date = st.date_input('Date', value=date.today(), key='entry_date')
-            mark = st.selectbox('Assembly Mark', [''] + marks, key='entry_mark')
+            work_orders = _get_work_orders()
+            wo_sel = st.selectbox('Work Order', ['All'] + work_orders, key='entry_wo')
+            filtered_marks = _get_marks_by_work_order(wo_sel) if wo_sel != 'All' else marks
+            mark = st.selectbox('Assembly Mark', [''] + filtered_marks, key='entry_mark')
 
             subs = _get_sub_assemblies(mark) if mark else []
             subs_selected = st.multiselect(
@@ -423,9 +434,9 @@ def page_daily_entry():
             today_rows = _get_today_progress(date.today())
             if today_rows:
                 df_t = pd.DataFrame(today_rows)[
-                    ['id', 'entry_date', 'assembly_mark', 'sub_assembly_mark',
+                    ['id', 'work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark',
                      'stage', 'delivery_order_no', 'weight_kg', 'qty', 'remarks']]
-                df_t.columns = ['ID', 'Date', 'Assembly', 'Sub-Assembly',
+                df_t.columns = ['ID', 'Work Order', 'Date', 'Assembly', 'Sub-Assembly',
                                  'Stage', 'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
                 st.dataframe(df_t, use_container_width=True, hide_index=True)
 
@@ -572,14 +583,17 @@ def page_report():
     summary_container = st.container()
 
     # ── Filters — always visible, directly above table ────────────────────────
-    c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
+    c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1.2, 1.2])
     with c1:
         start = st.date_input('From', value=date.today() - timedelta(days=7), key='rpt_start')
     with c2:
         end = st.date_input('To', value=date.today(), key='rpt_end')
     with c3:
-        asm_filter = st.selectbox('Assembly', ['All'] + _get_marks(), key='rpt_asm')
+        wo_filter = st.selectbox('Work Order', ['All'] + _get_work_orders(), key='rpt_wo')
     with c4:
+        rpt_marks = _get_marks_by_work_order(wo_filter) if wo_filter != 'All' else _get_marks()
+        asm_filter = st.selectbox('Assembly', ['All'] + rpt_marks, key='rpt_asm')
+    with c5:
         stage_filter = st.selectbox('Stage', ['All'] + db.STAGES, key='rpt_stage')
 
     bc1, bc2 = st.columns([1, 1])
@@ -593,12 +607,13 @@ def page_report():
 
     asm = None if asm_filter == 'All' else asm_filter
     stg = None if stage_filter == 'All' else stage_filter
+    wo  = None if wo_filter == 'All' else wo_filter
 
     if load:
         st.session_state.report_rows = db.search_progress(
-            stage=stg, assembly_mark=asm, start=str(start), end=str(end))
+            stage=stg, assembly_mark=asm, start=str(start), end=str(end), work_order=wo)
     if load_all:
-        st.session_state.report_rows = db.search_progress(stage=stg, assembly_mark=asm)
+        st.session_state.report_rows = db.search_progress(stage=stg, assembly_mark=asm, work_order=wo)
 
     rows = st.session_state.report_rows
     if rows:
@@ -620,9 +635,9 @@ def page_report():
             st.divider()
 
         df = pd.DataFrame(rows)[
-            ['entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
+            ['work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
              'delivery_order_no', 'weight_kg', 'qty', 'remarks']]
-        df.columns = ['Date', 'Assembly', 'Sub-Assembly', 'Stage',
+        df.columns = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Stage',
                       'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
         st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -661,12 +676,16 @@ def page_progress():
 
     st.divider()
 
-    rows = db.get_cumulative_by_sub()
+    prog_wo = st.selectbox('Filter by Work Order', ['All'] + _get_work_orders(), key='prog_wo')
+    wo_filter_prog = None if prog_wo == 'All' else prog_wo
+
+    rows = db.get_cumulative_by_sub(work_order=wo_filter_prog)
     if not rows:
         st.info('No progress data yet.')
         return
 
     df = pd.DataFrame(rows).rename(columns={
+        'work_order':       'Work Order',
         'assembly_mark':    'Assembly',
         'sub_assembly_mark':'Sub-Assembly',
         'total_weight_kg':  'Total (kg)',
@@ -686,7 +705,7 @@ def page_progress():
     df['Send to Site %'] = df.apply(lambda r: pct_str(r, 'Send to Site (kg)'), axis=1)
 
     display_cols = [
-        'Assembly', 'Sub-Assembly', 'Total (kg)',
+        'Work Order', 'Assembly', 'Sub-Assembly', 'Total (kg)',
         'Fit Up (kg)', 'Fit Up %',
         'Welding (kg)', 'Welding %',
         'Blast/Paint (kg)', 'Blast/Paint %',
@@ -703,6 +722,7 @@ def page_progress():
     prog_ws.title = 'Progress'
 
     hdr_cols = [
+        ('Work Order',           12, None),
         ('Assembly Mark',        18, None),
         ('Sub-Assembly Mark',    22, None),
         ('Total Weight (kg)',    16, '#,##0.00'),
@@ -752,6 +772,7 @@ def page_progress():
         sendsite = r.get('sendsite') or 0
 
         row_vals = [
+            r.get('work_order',        '001'),
             r.get('assembly_mark',     ''),
             r.get('sub_assembly_mark', ''),
             total,
@@ -805,9 +826,9 @@ def page_delivery():
 
     if rows:
         df = pd.DataFrame(rows)[
-            ['entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
+            ['work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
              'delivery_order_no', 'weight_kg', 'qty', 'remarks']]
-        df.columns = ['Date', 'Assembly', 'Sub-Assembly', 'Type',
+        df.columns = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
                       'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
         st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -906,14 +927,17 @@ def page_visual_inspection():
 
         with st.container(border=True):
             st.subheader('Inspection Records')
-            f1, f2, f3, f4 = st.columns([1, 1, 1.2, 1.2])
+            f1, f2, f3, f4, f5 = st.columns([1, 1, 1, 1.2, 1.2])
             with f1:
                 start = st.date_input('From', value=date.today() - timedelta(days=30), key='vi_start')
             with f2:
                 end = st.date_input('To', value=date.today(), key='vi_end')
             with f3:
-                asm_filter = st.selectbox('Assembly', ['All'] + _get_marks(), key='vi_asm_filter')
+                vi_wo = st.selectbox('Work Order', ['All'] + _get_work_orders(), key='vi_wo_filter')
             with f4:
+                vi_wo_marks = _get_marks_by_work_order(vi_wo) if vi_wo != 'All' else _get_marks()
+                asm_filter = st.selectbox('Assembly', ['All'] + vi_wo_marks, key='vi_asm_filter')
+            with f5:
                 vi_all_rows = st.session_state.get('vi_rows', [])
                 sub_options = sorted({r['sub_assembly_mark'] for r in vi_all_rows if r['sub_assembly_mark']})
                 sub_filter  = st.selectbox('Sub-Assembly', ['All'] + sub_options, key='vi_sub_filter')
@@ -974,7 +998,7 @@ def page_manage():
         tpl_wb = _xl.Workbook()
         tpl_ws = tpl_wb.active
         tpl_ws.title = 'Master Database'
-        tpl_headers = ['Assembly Mark', 'Sub Assembly', 'Part Mark', 'No.',
+        tpl_headers = ['Work Order', 'Assembly Mark', 'Sub Assembly', 'Part Mark', 'No.',
                        'Name', 'Profile', 'kg/m', 'Length (mm)', 'Weight (kg)',
                        'Profile 2', 'Grade', 'Remark',
                        'FIT UP (kg)', 'FIT UP Date',
@@ -1035,6 +1059,7 @@ def page_manage():
 
             # Column definitions: (header, width, number_format)
             exp_cols = [
+                ('Work Order',                 12, None),
                 ('Assembly Mark',              15, None),
                 ('Sub Assembly',               18, None),
                 ('Part Mark',                  12, None),
