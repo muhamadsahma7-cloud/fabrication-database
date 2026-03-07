@@ -1227,6 +1227,18 @@ def init_visual_inspection():
     c.close()
 
 
+def visual_inspection_exists(entry_date, mark, sub_mark):
+    """Return True if a record already exists for this date/assembly/sub-assembly."""
+    c = _conn()
+    row = c.execute(
+        "SELECT 1 FROM visual_inspection "
+        "WHERE entry_date=? AND assembly_mark=? AND sub_assembly_mark=?",
+        (str(entry_date), mark.strip().upper(), sub_mark.strip().upper())
+    ).fetchone()
+    c.close()
+    return row is not None
+
+
 def add_visual_inspection(entry_date, mark, sub_mark, weight_kg, qty, remarks=''):
     c = _conn()
     cur = c.execute(

@@ -904,6 +904,15 @@ def page_visual_inspection():
                         elif 'WELDING' not in completed:
                             errors.append(f'{label}: WELDING not completed.')
 
+                if not errors:
+                    check_subs = subs_selected if subs_selected else ['']
+                    for s in check_subs:
+                        label = s if s else mark
+                        if db.visual_inspection_exists(entry_date, mark, s):
+                            errors.append(
+                                f'{label}: already recorded on {entry_date}.'
+                            )
+
                 if errors:
                     for e in errors:
                         st.error(e)
