@@ -194,7 +194,13 @@ def page_daily_entry():
             with st.expander('📷 Scan QR Code'):
                 camera_img = st.camera_input('Point camera at QR code', key='qr_camera',
                                              label_visibility='collapsed')
-                if camera_img:
+
+                # Reset processed flag when camera is cleared
+                if camera_img is None:
+                    st.session_state.pop('_qr_processed', None)
+
+                # Only process if photo is new (not already processed)
+                if camera_img and not st.session_state.get('_qr_processed'):
                     try:
                         from pyzbar.pyzbar import decode as _pyzbar_decode
                     except ImportError:
@@ -214,13 +220,12 @@ def page_daily_entry():
                                 qr_mark = parts[0].strip().upper()
                                 qr_sub  = parts[1].strip().upper() if len(parts) > 1 else ''
                                 if qr_mark in marks:
-                                    st.session_state['entry_mark'] = qr_mark
-                                    st.session_state['entry_sub']  = (
+                                    st.session_state['entry_mark']   = qr_mark
+                                    st.session_state['entry_sub']    = (
                                         [qr_sub] if qr_sub and qr_sub in _get_sub_assemblies(qr_mark)
                                         else []
                                     )
-                                    st.success(f'Scanned: **{qr_mark}**'
-                                               + (f' / {qr_sub}' if qr_sub else ''))
+                                    st.session_state['_qr_processed'] = True
                                     st.rerun()
                                 else:
                                     st.error(f'Assembly mark "{qr_mark}" not found.')
@@ -228,6 +233,13 @@ def page_daily_entry():
                                 st.warning('No QR code detected — ensure good lighting and hold steady.')
                         except Exception as ex:
                             st.error(f'Scan error: {type(ex).__name__}: {ex}')
+
+                # Show result after successful scan
+                if st.session_state.get('_qr_processed'):
+                    scanned_mark = st.session_state.get('entry_mark', '')
+                    scanned_subs = st.session_state.get('entry_sub', [])
+                    label = f'**{scanned_mark}**' + (f' / {", ".join(scanned_subs)}' if scanned_subs else '')
+                    st.success(f'✅ Scanned: {label}')
 
             entry_date = st.date_input('Date', value=date.today(), key='entry_date')
             mark = st.selectbox('Assembly Mark', [''] + marks, key='entry_mark')
