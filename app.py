@@ -219,7 +219,6 @@ def page_daily_entry():
                                         [qr_sub] if qr_sub and qr_sub in _get_sub_assemblies(qr_mark)
                                         else []
                                     )
-                                    st.session_state['qr_camera'] = None
                                     st.success(f'Scanned: **{qr_mark}**'
                                                + (f' / {qr_sub}' if qr_sub else ''))
                                     st.rerun()
