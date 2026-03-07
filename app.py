@@ -197,30 +197,38 @@ def page_daily_entry():
                 if camera_img:
                     try:
                         from pyzbar.pyzbar import decode as _pyzbar_decode
-                        from PIL import Image as _PILImage
-                        img = _PILImage.open(camera_img)
-                        decoded = _pyzbar_decode(img)
-                        if decoded:
-                            qr_data = decoded[0].data.decode('utf-8').strip()
-                            parts   = qr_data.split('|')
-                            qr_mark = parts[0].strip().upper()
-                            qr_sub  = parts[1].strip().upper() if len(parts) > 1 else ''
-                            if qr_mark in marks:
-                                st.session_state['entry_mark'] = qr_mark
-                                st.session_state['entry_sub']  = (
-                                    [qr_sub] if qr_sub and qr_sub in _get_sub_assemblies(qr_mark)
-                                    else []
-                                )
-                                st.session_state['qr_camera'] = None  # clear camera
-                                st.success(f'Scanned: **{qr_mark}**'
-                                           + (f' / {qr_sub}' if qr_sub else ''))
-                                st.rerun()
+                    except ImportError:
+                        st.error('pyzbar library not available. '
+                                 'Ensure libzbar0 is in packages.txt and redeploy.')
+                        _pyzbar_decode = None
+
+                    if _pyzbar_decode:
+                        try:
+                            from PIL import Image as _PILImage
+                            camera_img.seek(0)
+                            img = _PILImage.open(camera_img).convert('RGB')
+                            decoded = _pyzbar_decode(img)
+                            if decoded:
+                                qr_data = decoded[0].data.decode('utf-8').strip()
+                                parts   = qr_data.split('|')
+                                qr_mark = parts[0].strip().upper()
+                                qr_sub  = parts[1].strip().upper() if len(parts) > 1 else ''
+                                if qr_mark in marks:
+                                    st.session_state['entry_mark'] = qr_mark
+                                    st.session_state['entry_sub']  = (
+                                        [qr_sub] if qr_sub and qr_sub in _get_sub_assemblies(qr_mark)
+                                        else []
+                                    )
+                                    st.session_state['qr_camera'] = None
+                                    st.success(f'Scanned: **{qr_mark}**'
+                                               + (f' / {qr_sub}' if qr_sub else ''))
+                                    st.rerun()
+                                else:
+                                    st.error(f'Assembly mark "{qr_mark}" not found.')
                             else:
-                                st.error(f'Assembly mark "{qr_mark}" not found.')
-                        else:
-                            st.warning('No QR code detected — try again.')
-                    except Exception as ex:
-                        st.error(f'Scan error: {ex}')
+                                st.warning('No QR code detected — ensure good lighting and hold steady.')
+                        except Exception as ex:
+                            st.error(f'Scan error: {type(ex).__name__}: {ex}')
 
             entry_date = st.date_input('Date', value=date.today(), key='entry_date')
             mark = st.selectbox('Assembly Mark', [''] + marks, key='entry_mark')
