@@ -234,12 +234,20 @@ def page_daily_entry():
                         except Exception as ex:
                             st.error(f'Scan error: {type(ex).__name__}: {ex}')
 
-                # Show result after successful scan
+                # Show result + live activity status after successful scan
                 if st.session_state.get('_qr_processed'):
                     scanned_mark = st.session_state.get('entry_mark', '')
                     scanned_subs = st.session_state.get('entry_sub', [])
                     label = f'**{scanned_mark}**' + (f' / {", ".join(scanned_subs)}' if scanned_subs else '')
                     st.success(f'✅ Scanned: {label}')
+                    # Live stage status
+                    check_sub = scanned_subs[0] if scanned_subs else ''
+                    completed = _get_completed_stages(scanned_mark, check_sub) if scanned_mark else set()
+                    st.markdown('**Activity Status:**')
+                    status_cols = st.columns(len(db.STAGES))
+                    for i, s in enumerate(db.STAGES):
+                        icon = '✅' if s in completed else '⏳'
+                        status_cols[i].markdown(f'{icon} **{s}**')
 
             entry_date = st.date_input('Date', value=date.today(), key='entry_date')
             mark = st.selectbox('Assembly Mark', [''] + marks, key='entry_mark')
