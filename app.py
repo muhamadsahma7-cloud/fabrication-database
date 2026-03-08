@@ -1432,17 +1432,19 @@ def page_summary():
 
     project_total = summary.get('total', 0) or 0
     stage_done    = {s: summary.get(s, 0) or 0 for s in db.STAGES}
-    overall_done  = sum(stage_done.values())
-    overall_pct   = min(overall_done / project_total * 100, 100) if project_total else 0
+    stage_pcts    = [min(stage_done[s] / project_total * 100, 100) if project_total else 0
+                     for s in db.STAGES]
+    overall_pct   = sum(stage_pcts) / len(db.STAGES) if db.STAGES else 0
     total_mh      = mh_summary.get('total_manhours', 0) or 0
-    productivity  = overall_done / total_mh if total_mh else 0
+    sendsite_done = stage_done.get('SEND TO SITE', 0)
+    productivity  = sendsite_done / total_mh if total_mh else 0
 
     # ── KPI row ────────────────────────────────────────────────────────────────
     k1, k2, k3, k4 = st.columns(4)
     k1.metric('Total Tonnage (kg)',    f'{project_total:,.1f}')
-    k2.metric('Overall Completion',    f'{overall_pct:.1f}%',    f'{overall_done:,.1f} kg done')
+    k2.metric('Overall Completion',    f'{overall_pct:.1f}%',    'avg of 4 stage %')
     k3.metric('Total Manhours',        f'{total_mh:,.1f} hrs',   f'{mh_summary.get("total_days",0)} days logged')
-    k4.metric('Productivity',          f'{productivity:.3f} kg/hr', 'output per manhour')
+    k4.metric('Productivity',          f'{productivity:.3f} kg/hr', 'send-to-site per manhour')
 
     st.divider()
 
