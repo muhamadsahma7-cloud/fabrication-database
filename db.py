@@ -494,7 +494,11 @@ def import_excel(file_source):
         wb = openpyxl.load_workbook(file_source, data_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(values_only=True))
-        header_row = next((i for i, r in enumerate(rows) if r and r[0] == 'Assembly Mark'), None)
+        header_row = next(
+            (i for i, r in enumerate(rows)
+             if r and any(str(v).strip() == 'Assembly Mark' for v in r if v is not None)),
+            None
+        )
         if header_row is None:
             return 0, 0, "Header row 'Assembly Mark' not found."
         headers = [str(h).strip() if h else '' for h in rows[header_row]]
