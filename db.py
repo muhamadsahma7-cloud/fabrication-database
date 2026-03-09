@@ -1231,6 +1231,17 @@ def init_visual_inspection():
     c.close()
 
 
+def visual_inspection_passed(mark, sub_mark):
+    """Return True if at least one visual inspection record exists for this assembly/sub-assembly."""
+    c = _conn()
+    row = c.execute(
+        "SELECT 1 FROM visual_inspection WHERE assembly_mark=? AND sub_assembly_mark=?",
+        (mark.strip().upper(), sub_mark.strip().upper())
+    ).fetchone()
+    c.close()
+    return row is not None
+
+
 def visual_inspection_exists(entry_date, mark, sub_mark):
     """Return True if a record already exists for this date/assembly/sub-assembly."""
     c = _conn()

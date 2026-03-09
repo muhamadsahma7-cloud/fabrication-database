@@ -366,6 +366,8 @@ def page_daily_entry():
                             prev_stage = db.STAGES[stage_idx - 1]
                             if prev_stage not in completed and prev_stage not in queued_stages:
                                 errors.append(f'{label}: "{prev_stage}" must be completed first.')
+                        if stage == 'BLASTING & PAINTING' and not db.visual_inspection_passed(mark, s):
+                            errors.append(f'{label}: Visual Inspection must be recorded before Blasting & Painting.')
 
                 if errors:
                     for e in errors:
