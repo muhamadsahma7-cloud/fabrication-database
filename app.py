@@ -931,6 +931,42 @@ def page_visual_inspection():
                     st.success(f'Saved {n} inspection record{"s" if n > 1 else ""}.')
                     st.rerun()
 
+    # ── Import from Excel ──────────────────────────────────────────────────────
+    with st.expander('📂 Import from Excel'):
+        # Template download
+        vi_tpl_buf = BytesIO()
+        import openpyxl as _xl_vi
+        from openpyxl.styles import Font as _VFont, PatternFill as _VFill, Alignment as _VAlign
+        vi_tpl_wb = _xl_vi.Workbook()
+        vi_tpl_ws = vi_tpl_wb.active
+        vi_tpl_ws.title = 'Visual Inspection'
+        vi_headers = ['Date', 'Assembly Mark', 'Sub Assembly Mark', 'Weight (kg)', 'Qty', 'Remarks']
+        hdr_fill = _VFill('solid', fgColor='1E3A5F')
+        hdr_font = _VFont(bold=True, color='FFFFFF')
+        hdr_aln  = _VAlign(horizontal='center')
+        for ci, h in enumerate(vi_headers, 1):
+            cell = vi_tpl_ws.cell(row=1, column=ci, value=h)
+            cell.fill = hdr_fill
+            cell.font = hdr_font
+            cell.alignment = hdr_aln
+            vi_tpl_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 14)
+        vi_tpl_wb.save(vi_tpl_buf)
+        st.download_button(
+            '📄 Download Template (.xlsx)', vi_tpl_buf.getvalue(),
+            'visual_inspection_template.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+        uploaded = st.file_uploader('Upload Excel file', type=['xlsx'], key='vi_import_file')
+        if uploaded and st.button('📥 Import', type='primary', key='vi_import_btn'):
+            inserted, skipped, err = db.import_visual_inspection_excel(uploaded.read())
+            if err:
+                st.error(f'Import failed: {err}')
+            else:
+                _get_visual_inspection_summary.clear()
+                st.success(f'Imported {inserted} record(s). Skipped {skipped} duplicate(s).')
+                st.rerun()
+
     with col_right:
         with st.container(border=True):
             summ = db.get_visual_inspection_summary()

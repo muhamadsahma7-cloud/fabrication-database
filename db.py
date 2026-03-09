@@ -1301,6 +1301,93 @@ def delete_visual_inspection(rid):
     c.close()
 
 
+def import_visual_inspection_excel(file_source):
+    """Import visual inspection records from Excel.
+    Expected columns: Date, Assembly Mark, Sub Assembly Mark, Weight (kg), Qty, Remarks
+    Skips duplicates (same date + assembly + sub-assembly).
+    Returns (inserted, skipped, error_message).
+    """
+    try:
+        import openpyxl
+        from io import BytesIO as _BytesIO
+        if isinstance(file_source, (bytes, bytearray)):
+            file_source = _BytesIO(file_source)
+        wb = openpyxl.load_workbook(file_source, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+
+        header_row = next(
+            (i for i, r in enumerate(rows)
+             if r and any(str(v).strip().lower() in ('date', 'assembly mark')
+                          for v in r if v is not None)),
+            None
+        )
+        if header_row is None:
+            return 0, 0, "Header row not found. Ensure columns: Date, Assembly Mark, Sub Assembly Mark, Weight (kg), Qty, Remarks"
+
+        headers = [str(h).strip().lower() if h else '' for h in rows[header_row]]
+        col = {h: i for i, h in enumerate(headers)}
+
+        def _get(row, *names, default=None):
+            for name in names:
+                idx = col.get(name.lower())
+                if idx is not None and idx < len(row) and row[idx] is not None:
+                    return row[idx]
+            return default
+
+        def _float(v):
+            try: return float(v)
+            except: return 0.0
+
+        def _int(v):
+            try: return int(v)
+            except: return 1
+
+        c = _conn()
+        inserted = 0
+        skipped  = 0
+        for row in rows[header_row + 1:]:
+            if not row or not any(v for v in row):
+                continue
+            raw_date = _get(row, 'date', default=None)
+            if raw_date and hasattr(raw_date, 'strftime'):
+                entry_date = raw_date.strftime('%Y-%m-%d')
+            elif raw_date:
+                entry_date = str(raw_date).strip()
+            else:
+                continue
+
+            mark = str(_get(row, 'assembly mark', default='') or '').strip().upper()
+            if not mark:
+                continue
+            sub  = str(_get(row, 'sub assembly mark', 'sub assembly', 'sub-assembly mark', default='') or '').strip().upper()
+            wt   = _float(_get(row, 'weight (kg)', 'weight', 'kg', default=0))
+            qty  = _int(_get(row, 'qty', 'quantity', default=1))
+            rmk  = str(_get(row, 'remarks', 'remark', default='') or '').strip()
+
+            # skip duplicates
+            dup = c.execute(
+                "SELECT 1 FROM visual_inspection WHERE entry_date=? AND assembly_mark=? AND sub_assembly_mark=?",
+                (entry_date, mark, sub)
+            ).fetchone()
+            if dup:
+                skipped += 1
+                continue
+
+            c.execute(
+                "INSERT INTO visual_inspection (entry_date, assembly_mark, sub_assembly_mark, weight_kg, qty, remarks) "
+                "VALUES (?,?,?,?,?,?)",
+                (entry_date, mark, sub, wt, qty, rmk)
+            )
+            inserted += 1
+
+        c.commit()
+        c.close()
+        return inserted, skipped, None
+    except Exception as e:
+        return 0, 0, str(e)
+
+
 # ── Session / Online Tracking ──────────────────────────────────────────────────
 
 def init_sessions():
