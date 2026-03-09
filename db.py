@@ -976,11 +976,12 @@ def get_stage_daily_stats():
     """Return total_kg and unique day count per stage — single aggregate query."""
     c = _conn()
     rows = c.execute("""
-        SELECT stage,
-               COALESCE(SUM(weight_kg), 0)   AS total_kg,
-               COUNT(DISTINCT entry_date)     AS days
-        FROM progress
-        GROUP BY stage
+        SELECT p.stage,
+               COALESCE(SUM(p.weight_kg), 0)        AS total_kg,
+               COUNT(DISTINCT p.entry_date)          AS days
+        FROM progress p
+        JOIN assemblies a ON p.assembly_mark = a.assembly_mark
+        GROUP BY p.stage
     """).fetchall()
     c.close()
     result = {}
@@ -1001,7 +1002,9 @@ def get_summary():
         "SELECT COALESCE(SUM(total_weight_kg),0) AS total FROM assemblies"
     ).fetchone()['total']
     rows  = db.execute(
-        "SELECT stage, COALESCE(SUM(weight_kg),0) as done FROM progress GROUP BY stage"
+        "SELECT p.stage, COALESCE(SUM(p.weight_kg),0) as done "
+        "FROM progress p JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
+        "GROUP BY p.stage"
     ).fetchall()
     db.close()
     result = {'total': total}
