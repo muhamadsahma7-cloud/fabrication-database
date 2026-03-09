@@ -606,20 +606,19 @@ def import_excel(file_source):
             )
             raw.commit()
 
-        # 3. Progress — single DELETE + single INSERT
-        # Key includes sub so each sub-assembly gets its own record (export JOIN works)
+        # 3. Progress — delete ALL entries for every imported assembly_mark, then insert
+        # non-zero entries. Deleting by assembly_mark (not by stage+kg>0) ensures stale
+        # entries from previous imports are fully replaced, even if kg is now 0.
         prog_rows  = [(ds, asm, sub, stg, kg) for (asm, sub, stg), (kg, ds) in progress_map.items()]
         prog_count = 0
-        if prog_rows:
-            # Delete by (assembly_mark, stage) only — no sub filter — so old records
-            # from previous imports (stored with sub='') are also removed.
-            asm_stage_pairs = list({(asm, stg) for asm, sub, stg in progress_map})
+        if asm_order:
             psycopg2.extras.execute_values(
                 cur,
-                "DELETE FROM progress WHERE (assembly_mark, stage) IN (VALUES %s)",
-                asm_stage_pairs,
+                "DELETE FROM progress WHERE assembly_mark IN (SELECT v FROM (VALUES %s) AS t(v))",
+                [(asm,) for asm in asm_order],
             )
             raw.commit()
+        if prog_rows:
             psycopg2.extras.execute_values(
                 cur,
                 "INSERT INTO progress "
