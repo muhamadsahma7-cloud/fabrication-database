@@ -578,8 +578,11 @@ def page_report():
     with vi_cols[0]:
         st.metric('Inspected Assemblies', f'{vi_entries}')
     with vi_cols[1]:
-        st.metric('Ready for Delivery kg', f'{ready_kg:,.1f} kg',
+        st.metric('Ready for Delivery kg', f'{max(ready_kg, 0):,.1f} kg',
                   f'{vi_total_kg:,.1f} inspected − {blast_total:,.1f} sent to B&P')
+        if ready_kg < 0:
+            st.warning(f'⚠️ B&P entries exceed inspected kg by {abs(ready_kg):,.1f} kg. '
+                       'Check for missing Visual Inspection records.')
     st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)
