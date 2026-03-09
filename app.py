@@ -641,21 +641,50 @@ def page_report():
             st.divider()
 
         df = pd.DataFrame(rows)[
-            ['work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
+            ['id', 'work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
              'delivery_order_no', 'weight_kg', 'qty', 'remarks']]
-        df.columns = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Stage',
+        df.columns = ['ID', 'Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Stage',
                       'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
-        st.dataframe(df, use_container_width=True, hide_index=True)
 
+        is_admin = st.session_state.user['role'] == 'admin'
+        if is_admin:
+            hcols = st.columns([.4, .7, .8, 1, 1, 1, .7, .8, .3, 1, .4])
+            for h, lbl in zip(hcols, ['ID','WO','Date','Assembly','Sub-Asm','Stage',
+                                       'D.O.','Wt(kg)','Qty','Remarks','']):
+                h.markdown(f'**{lbl}**')
+            for row in rows:
+                c = st.columns([.4, .7, .8, 1, 1, 1, .7, .8, .3, 1, .4])
+                c[0].write(row['id'])
+                c[1].write(row.get('work_order',''))
+                c[2].write(row['entry_date'])
+                c[3].write(row['assembly_mark'])
+                c[4].write(row['sub_assembly_mark'])
+                c[5].write(row['stage'])
+                c[6].write(row.get('delivery_order_no',''))
+                c[7].write(f"{row['weight_kg']:,.2f}")
+                c[8].write(row['qty'])
+                c[9].write(row.get('remarks',''))
+                if c[10].button('🗑', key=f"rpt_del_{row['id']}", use_container_width=True):
+                    db.delete_progress(row['id'])
+                    _get_today_progress.clear()
+                    _get_stage_daily_stats.clear()
+                    _get_completed_stages.clear()
+                    st.session_state.report_rows = [r for r in st.session_state.report_rows
+                                                    if r['id'] != row['id']]
+                    st.rerun()
+        else:
+            st.dataframe(df.drop(columns=['ID']), use_container_width=True, hide_index=True)
+
+        export_df = df.drop(columns=['ID'])
         ec1, ec2 = st.columns(2)
         with ec1:
             st.download_button('📥 Export CSV',
-                               df.to_csv(index=False).encode('utf-8'),
+                               export_df.to_csv(index=False).encode('utf-8'),
                                f'report_{start}_{end}.csv', 'text/csv',
                                use_container_width=True)
         with ec2:
             buf = BytesIO()
-            df.to_excel(buf, index=False, engine='openpyxl')
+            export_df.to_excel(buf, index=False, engine='openpyxl')
             st.download_button('📥 Export Excel', buf.getvalue(),
                                f'report_{start}_{end}.xlsx',
                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
