@@ -1113,7 +1113,16 @@ def page_manage():
             if err:
                 st.error(f'Import failed: {err}')
             else:
+                _get_marks.clear()
+                _get_work_orders.clear()
+                _get_marks_by_work_order.clear()
+                _get_today_progress.clear()
+                _get_stage_daily_stats.clear()
+                _get_completed_stages.clear()
+                _get_visual_inspection_summary.clear()
+                _get_raw_material_summary.clear()
                 st.success(f'✅ Imported {part_count} parts and {prog_count} progress records.')
+                st.rerun()
 
 
     # ── Export ────────────────────────────────────────────────────────────────
