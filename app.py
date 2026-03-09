@@ -931,42 +931,6 @@ def page_visual_inspection():
                     st.success(f'Saved {n} inspection record{"s" if n > 1 else ""}.')
                     st.rerun()
 
-    # ── Import from Excel ──────────────────────────────────────────────────────
-    with st.expander('📂 Import from Excel'):
-        # Template download
-        vi_tpl_buf = BytesIO()
-        import openpyxl as _xl_vi
-        from openpyxl.styles import Font as _VFont, PatternFill as _VFill, Alignment as _VAlign
-        vi_tpl_wb = _xl_vi.Workbook()
-        vi_tpl_ws = vi_tpl_wb.active
-        vi_tpl_ws.title = 'Visual Inspection'
-        vi_headers = ['Date', 'Assembly Mark', 'Sub Assembly Mark', 'Weight (kg)', 'Qty', 'Remarks']
-        hdr_fill = _VFill('solid', fgColor='1E3A5F')
-        hdr_font = _VFont(bold=True, color='FFFFFF')
-        hdr_aln  = _VAlign(horizontal='center')
-        for ci, h in enumerate(vi_headers, 1):
-            cell = vi_tpl_ws.cell(row=1, column=ci, value=h)
-            cell.fill = hdr_fill
-            cell.font = hdr_font
-            cell.alignment = hdr_aln
-            vi_tpl_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 14)
-        vi_tpl_wb.save(vi_tpl_buf)
-        st.download_button(
-            '📄 Download Template (.xlsx)', vi_tpl_buf.getvalue(),
-            'visual_inspection_template.xlsx',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        )
-
-        uploaded = st.file_uploader('Upload Excel file', type=['xlsx'], key='vi_import_file')
-        if uploaded and st.button('📥 Import', type='primary', key='vi_import_btn'):
-            inserted, skipped, err = db.import_visual_inspection_excel(uploaded.read())
-            if err:
-                st.error(f'Import failed: {err}')
-            else:
-                _get_visual_inspection_summary.clear()
-                st.success(f'Imported {inserted} record(s). Skipped {skipped} duplicate(s).')
-                st.rerun()
-
     with col_right:
         with st.container(border=True):
             summ = db.get_visual_inspection_summary()
@@ -1027,6 +991,40 @@ def page_visual_inspection():
                         st.rerun()
             else:
                 st.info('Click Load or Show All to view records.')
+
+            # ── Export Excel ───────────────────────────────────────────────────
+            export_rows = st.session_state.get('vi_rows', [])
+            if export_rows:
+                import openpyxl as _xl_vi
+                from openpyxl.styles import Font as _VFont, PatternFill as _VFill, Alignment as _VAlign
+                vi_wb = _xl_vi.Workbook()
+                vi_ws = vi_wb.active
+                vi_ws.title = 'Visual Inspection'
+                vi_exp_cols = ['Date', 'Assembly Mark', 'Sub Assembly Mark', 'Weight (kg)', 'Qty', 'Remarks']
+                hdr_fill = _VFill('solid', fgColor='1E3A5F')
+                hdr_font = _VFont(bold=True, color='FFFFFF')
+                hdr_aln  = _VAlign(horizontal='center')
+                for ci, h in enumerate(vi_exp_cols, 1):
+                    cell = vi_ws.cell(row=1, column=ci, value=h)
+                    cell.fill = hdr_fill
+                    cell.font = hdr_font
+                    cell.alignment = hdr_aln
+                    vi_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 14)
+                for ri, r in enumerate(export_rows, 2):
+                    vi_ws.cell(row=ri, column=1, value=r['entry_date'])
+                    vi_ws.cell(row=ri, column=2, value=r['assembly_mark'])
+                    vi_ws.cell(row=ri, column=3, value=r['sub_assembly_mark'])
+                    vi_ws.cell(row=ri, column=4, value=r['weight_kg'])
+                    vi_ws.cell(row=ri, column=5, value=r['qty'])
+                    vi_ws.cell(row=ri, column=6, value=r['remarks'])
+                vi_exp_buf = BytesIO()
+                vi_wb.save(vi_exp_buf)
+                st.download_button(
+                    '📥 Export Excel', vi_exp_buf.getvalue(),
+                    'visual_inspection.xlsx',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
