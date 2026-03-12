@@ -317,7 +317,7 @@ def page_daily_entry():
                     for s in subs_selected:
                         weights_map[s] = st.number_input(
                             s or mark, value=weights_map[s], min_value=0.0,
-                            format='%.2f', key=f'wt_ovr_{s}')
+                            format='%.2f', key=f'wt_ovr_{mark}_{s}_{stage}')
             else:
                 s0 = subs_selected[0] if subs_selected else ''
                 weight_val = _sub_weight(s0) if mark else 0.0
@@ -325,7 +325,8 @@ def page_daily_entry():
                 st.caption('Auto-filled from parts data')
                 with st.expander('Override weight'):
                     weight_val = st.number_input('Weight (kg)', value=weight_val,
-                                                 min_value=0.0, format='%.2f', key='wt_ovr_single')
+                                                 min_value=0.0, format='%.2f',
+                                                 key=f'wt_ovr_{mark}_{s0}_{stage}')
                 weights_map = {s0: weight_val}
 
             qty     = st.number_input('Qty', value=1, min_value=0, step=1)
