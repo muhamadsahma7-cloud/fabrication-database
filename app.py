@@ -292,6 +292,13 @@ def page_daily_entry():
                 ):
                     st.session_state.sel_stage = s
                     st.rerun()
+            if st.button(
+                '🔍 VISUAL INSPECTION',
+                use_container_width=True,
+                type='primary' if st.session_state.sel_stage == 'VISUAL INSPECTION' else 'secondary'
+            ):
+                st.session_state.sel_stage = 'VISUAL INSPECTION'
+                st.rerun()
             stage = st.session_state.sel_stage
 
             # Auto weight per sub-assembly from parts table
@@ -327,66 +334,102 @@ def page_daily_entry():
                 do_no = st.text_input('D.O. Number *', placeholder='Required for this stage')
             remarks = st.text_area('Remarks', height=70)
 
-            # Live duplicate warning — check every selected sub
+            # Live duplicate warning
             if mark:
-                check_subs  = subs_selected if subs_selected else ['']
-                warn_done   = [s for s in check_subs
-                               if stage in _get_completed_stages(mark, s)]
-                warn_queued = [s for s in check_subs
-                               if stage in {e['stage'] for e in st.session_state.queue
-                                            if e['mark'] == mark.upper() and e['sub'] == s.upper()}]
-                if warn_done:
-                    st.warning(f'⚠️ [{stage}] already recorded for: '
-                               f'{", ".join(s or mark for s in warn_done)}')
-                elif warn_queued:
-                    st.warning(f'⚠️ [{stage}] already in queue for: '
-                               f'{", ".join(s or mark for s in warn_queued)}')
-
-            if st.button('➕ Add to Queue', type='primary', use_container_width=True):
-                errors = []
-                if not mark:
-                    errors.append('Assembly Mark is required.')
-                if stage in ('BLASTING & PAINTING', 'SEND TO SITE') and not do_no.strip():
-                    errors.append(f'D.O. Number is required for [{stage}].')
-
                 check_subs = subs_selected if subs_selected else ['']
-
-                if mark and not errors:
-                    stage_idx = db.STAGES.index(stage)
-                    for s in check_subs:
-                        completed     = _get_completed_stages(mark, s)
-                        queued_stages = {e['stage'] for e in st.session_state.queue
-                                         if e['mark'] == mark.upper() and e['sub'] == s.upper()}
-                        label = s if s else mark
-                        if stage in completed:
-                            errors.append(f'[{stage}] already recorded for {label}.')
-                        elif stage in queued_stages:
-                            errors.append(f'[{stage}] already in queue for {label}.')
-                        elif stage_idx > 0:
-                            prev_stage = db.STAGES[stage_idx - 1]
-                            if prev_stage not in completed and prev_stage not in queued_stages:
-                                errors.append(f'{label}: "{prev_stage}" must be completed first.')
-                        if stage == 'BLASTING & PAINTING' and not db.visual_inspection_passed(mark, s):
-                            errors.append(f'{label}: Visual Inspection must be recorded before Blasting & Painting.')
-
-                if errors:
-                    for e in errors:
-                        st.error(e)
+                if stage == 'VISUAL INSPECTION':
+                    already_vi = [s for s in check_subs
+                                  if db.visual_inspection_exists(entry_date, mark, s)]
+                    if already_vi:
+                        st.warning(f'⚠️ Already inspected on {entry_date}: '
+                                   f'{", ".join(s or mark for s in already_vi)}')
                 else:
-                    for s in check_subs:
-                        st.session_state.queue.append({
-                            'date':    str(entry_date),
-                            'mark':    mark.upper(),
-                            'sub':     s.upper(),
-                            'stage':   stage,
-                            'weight':  weights_map.get(s, 0.0),
-                            'qty':     int(qty),
-                            'do_no':   do_no.strip(),
-                            'remarks': remarks.strip(),
-                        })
-                    n = len(check_subs)
-                    st.success(f'Added {n} item{"s" if n > 1 else ""} to queue.')
-                    st.rerun()
+                    warn_done   = [s for s in check_subs
+                                   if stage in _get_completed_stages(mark, s)]
+                    warn_queued = [s for s in check_subs
+                                   if stage in {e['stage'] for e in st.session_state.queue
+                                                if e['mark'] == mark.upper() and e['sub'] == s.upper()}]
+                    if warn_done:
+                        st.warning(f'⚠️ [{stage}] already recorded for: '
+                                   f'{", ".join(s or mark for s in warn_done)}')
+                    elif warn_queued:
+                        st.warning(f'⚠️ [{stage}] already in queue for: '
+                                   f'{", ".join(s or mark for s in warn_queued)}')
+
+            if stage == 'VISUAL INSPECTION':
+                if st.button('💾 Save Inspection', type='primary', use_container_width=True):
+                    errors = []
+                    if not mark:
+                        errors.append('Assembly Mark is required.')
+                    else:
+                        check_subs = subs_selected if subs_selected else ['']
+                        for s in check_subs:
+                            completed = _get_completed_stages(mark, s)
+                            label = s if s else mark
+                            if 'FIT UP' not in completed:
+                                errors.append(f'{label}: FIT UP not completed.')
+                            elif 'WELDING' not in completed:
+                                errors.append(f'{label}: WELDING not completed.')
+                            elif db.visual_inspection_exists(entry_date, mark, s):
+                                errors.append(f'{label}: already recorded on {entry_date}.')
+                    if errors:
+                        for e in errors:
+                            st.error(e)
+                    else:
+                        check_subs = subs_selected if subs_selected else ['']
+                        for s in check_subs:
+                            db.add_visual_inspection(entry_date, mark, s,
+                                                     weights_map.get(s, 0.0), qty, remarks)
+                        _get_visual_inspection_summary.clear()
+                        n = len(check_subs)
+                        st.success(f'Saved {n} inspection record{"s" if n > 1 else ""}.')
+                        st.rerun()
+            else:
+                if st.button('➕ Add to Queue', type='primary', use_container_width=True):
+                    errors = []
+                    if not mark:
+                        errors.append('Assembly Mark is required.')
+                    if stage in ('BLASTING & PAINTING', 'SEND TO SITE') and not do_no.strip():
+                        errors.append(f'D.O. Number is required for [{stage}].')
+
+                    check_subs = subs_selected if subs_selected else ['']
+
+                    if mark and not errors:
+                        stage_idx = db.STAGES.index(stage)
+                        for s in check_subs:
+                            completed     = _get_completed_stages(mark, s)
+                            queued_stages = {e['stage'] for e in st.session_state.queue
+                                             if e['mark'] == mark.upper() and e['sub'] == s.upper()}
+                            label = s if s else mark
+                            if stage in completed:
+                                errors.append(f'[{stage}] already recorded for {label}.')
+                            elif stage in queued_stages:
+                                errors.append(f'[{stage}] already in queue for {label}.')
+                            elif stage_idx > 0:
+                                prev_stage = db.STAGES[stage_idx - 1]
+                                if prev_stage not in completed and prev_stage not in queued_stages:
+                                    errors.append(f'{label}: "{prev_stage}" must be completed first.')
+                            if stage == 'BLASTING & PAINTING' and not db.visual_inspection_passed(mark, s):
+                                errors.append(f'{label}: Visual Inspection must be recorded before Blasting & Painting.')
+
+                    if errors:
+                        for e in errors:
+                            st.error(e)
+                    else:
+                        for s in check_subs:
+                            st.session_state.queue.append({
+                                'date':    str(entry_date),
+                                'mark':    mark.upper(),
+                                'sub':     s.upper(),
+                                'stage':   stage,
+                                'weight':  weights_map.get(s, 0.0),
+                                'qty':     int(qty),
+                                'do_no':   do_no.strip(),
+                                'remarks': remarks.strip(),
+                            })
+                        n = len(check_subs)
+                        st.success(f'Added {n} item{"s" if n > 1 else ""} to queue.')
+                        st.rerun()
 
     # ── Right: QR Generator + Queue + Saved ──────────────────────────────────
     with col_right:
@@ -890,170 +933,98 @@ def page_delivery():
 def page_visual_inspection():
     st.header('🔍 Visual Inspection')
 
-    marks = _get_marks()
+    summ = db.get_visual_inspection_summary()
+    s1, s2 = st.columns(2)
+    s1.metric('Total Inspected', f"{summ['entries']} assemblies")
+    s2.metric('Total kg Inspected', f"{summ['total_kg']:,.1f} kg")
 
-    col_form, col_right = st.columns([1, 1.6])
+    st.divider()
 
-    with col_form:
-        with st.container(border=True):
-            st.subheader('Record Inspection')
-            entry_date = st.date_input('Date', value=date.today(), key='vi_date')
-            mark = st.selectbox('Assembly Mark', [''] + marks, key='vi_mark')
-            subs = _get_sub_assemblies(mark) if mark else []
-            subs_selected = st.multiselect(
-                'Sub-Assembly Mark', subs, key='vi_sub',
-                placeholder='Select one or more (empty = whole assembly)')
+    with st.container(border=True):
+        st.subheader('Inspection Records')
+        f1, f2, f3, f4, f5 = st.columns([1, 1, 1, 1.2, 1.2])
+        with f1:
+            start = st.date_input('From', value=date.today() - timedelta(days=30), key='vi_start')
+        with f2:
+            end = st.date_input('To', value=date.today(), key='vi_end')
+        with f3:
+            vi_wo = st.selectbox('Work Order', ['All'] + _get_work_orders(), key='vi_wo_filter')
+        with f4:
+            vi_wo_marks = _get_marks_by_work_order(vi_wo) if vi_wo != 'All' else _get_marks()
+            asm_filter = st.selectbox('Assembly', ['All'] + vi_wo_marks, key='vi_asm_filter')
+        with f5:
+            vi_all_rows = st.session_state.get('vi_rows', [])
+            sub_options = sorted({r['sub_assembly_mark'] for r in vi_all_rows if r['sub_assembly_mark']})
+            sub_filter  = st.selectbox('Sub-Assembly', ['All'] + sub_options, key='vi_sub_filter')
 
-            all_parts = _get_parts(mark) if mark else []
-            def _sub_weight(s):
-                pts = [p for p in all_parts if p['sub_assembly_mark'] == s] if s else all_parts
-                return round(sum(p['total_weight_kg'] for p in pts), 2)
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            if st.button('🔍 Load by Date', use_container_width=True):
+                st.session_state.vi_rows = db.get_visual_inspections(str(start), str(end))
+        with col_b2:
+            if st.button('📋 Show All', use_container_width=True):
+                st.session_state.vi_rows = db.get_visual_inspections()
 
-            if len(subs_selected) >= 2:
-                weights_map = {s: _sub_weight(s) for s in subs_selected}
-                total_w = sum(weights_map.values())
-                st.caption(f"Auto weight: **{total_w:,.2f} kg** total "
-                           f"across {len(subs_selected)} sub-assemblies")
-            else:
-                s0 = subs_selected[0] if subs_selected else ''
-                weight_val = _sub_weight(s0) if mark else 0.0
-                weight = st.number_input('Weight (kg)', value=weight_val, min_value=0.0,
-                                         format='%.2f', key='vi_weight')
-                weights_map = {s0: weight}
-
-            qty     = st.number_input('Qty', value=1, min_value=0, step=1, key='vi_qty')
-            remarks = st.text_area('Remarks', height=70, key='vi_remarks')
-
-            if st.button('💾 Save Inspection', type='primary', use_container_width=True):
-                errors = []
-                if not mark:
-                    errors.append('Assembly Mark is required.')
-                else:
-                    check_subs = subs_selected if subs_selected else ['']
-                    for s in check_subs:
-                        completed = _get_completed_stages(mark, s)
-                        label = s if s else mark
-                        if 'FIT UP' not in completed:
-                            errors.append(f'{label}: FIT UP not completed.')
-                        elif 'WELDING' not in completed:
-                            errors.append(f'{label}: WELDING not completed.')
-
-                if not errors:
-                    check_subs = subs_selected if subs_selected else ['']
-                    for s in check_subs:
-                        label = s if s else mark
-                        if db.visual_inspection_exists(entry_date, mark, s):
-                            errors.append(
-                                f'{label}: already recorded on {entry_date}.'
-                            )
-
-                if errors:
-                    for e in errors:
-                        st.error(e)
-                else:
-                    check_subs = subs_selected if subs_selected else ['']
-                    for s in check_subs:
-                        db.add_visual_inspection(entry_date, mark, s,
-                                                 weights_map.get(s, 0.0), qty, remarks)
+        rows = st.session_state.get('vi_rows', [])
+        if asm_filter != 'All':
+            rows = [r for r in rows if r['assembly_mark'] == asm_filter]
+        if sub_filter != 'All':
+            rows = [r for r in rows if r['sub_assembly_mark'] == sub_filter]
+        if rows:
+            hcols = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
+            for h, label in zip(hcols, ['ID', 'Date', 'Assembly', 'Sub-Assembly',
+                                         'Weight (kg)', 'Qty', 'Remarks', '']):
+                h.markdown(f'**{label}**')
+            for row in rows:
+                c = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
+                c[0].write(row['id'])
+                c[1].write(row['entry_date'])
+                c[2].write(row['assembly_mark'])
+                c[3].write(row['sub_assembly_mark'])
+                c[4].write(f"{row['weight_kg']:,.2f}")
+                c[5].write(row['qty'])
+                c[6].write(row['remarks'])
+                if c[7].button('🗑', key=f"vi_del_{row['id']}", use_container_width=True):
+                    db.delete_visual_inspection(row['id'])
                     _get_visual_inspection_summary.clear()
-                    n = len(check_subs)
-                    st.success(f'Saved {n} inspection record{"s" if n > 1 else ""}.')
-                    st.rerun()
-
-    with col_right:
-        with st.container(border=True):
-            summ = db.get_visual_inspection_summary()
-            s1, s2 = st.columns(2)
-            s1.metric('Total Inspected', f"{summ['entries']} assemblies")
-            s2.metric('Total kg Inspected', f"{summ['total_kg']:,.1f} kg")
-
-        st.markdown('---')
-
-        with st.container(border=True):
-            st.subheader('Inspection Records')
-            f1, f2, f3, f4, f5 = st.columns([1, 1, 1, 1.2, 1.2])
-            with f1:
-                start = st.date_input('From', value=date.today() - timedelta(days=30), key='vi_start')
-            with f2:
-                end = st.date_input('To', value=date.today(), key='vi_end')
-            with f3:
-                vi_wo = st.selectbox('Work Order', ['All'] + _get_work_orders(), key='vi_wo_filter')
-            with f4:
-                vi_wo_marks = _get_marks_by_work_order(vi_wo) if vi_wo != 'All' else _get_marks()
-                asm_filter = st.selectbox('Assembly', ['All'] + vi_wo_marks, key='vi_asm_filter')
-            with f5:
-                vi_all_rows = st.session_state.get('vi_rows', [])
-                sub_options = sorted({r['sub_assembly_mark'] for r in vi_all_rows if r['sub_assembly_mark']})
-                sub_filter  = st.selectbox('Sub-Assembly', ['All'] + sub_options, key='vi_sub_filter')
-
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button('🔍 Load by Date', use_container_width=True):
-                    st.session_state.vi_rows = db.get_visual_inspections(str(start), str(end))
-            with col_b2:
-                if st.button('📋 Show All', use_container_width=True):
                     st.session_state.vi_rows = db.get_visual_inspections()
+                    st.rerun()
+        else:
+            st.info('Click Load or Show All to view records.')
 
-            rows = st.session_state.get('vi_rows', [])
-            if asm_filter != 'All':
-                rows = [r for r in rows if r['assembly_mark'] == asm_filter]
-            if sub_filter != 'All':
-                rows = [r for r in rows if r['sub_assembly_mark'] == sub_filter]
-            if rows:
-                hcols = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
-                for h, label in zip(hcols, ['ID', 'Date', 'Assembly', 'Sub-Assembly',
-                                             'Weight (kg)', 'Qty', 'Remarks', '']):
-                    h.markdown(f'**{label}**')
-                for row in rows:
-                    c = st.columns([.5, 1, 1.2, 1.2, 1, .5, 1.5, .8])
-                    c[0].write(row['id'])
-                    c[1].write(row['entry_date'])
-                    c[2].write(row['assembly_mark'])
-                    c[3].write(row['sub_assembly_mark'])
-                    c[4].write(f"{row['weight_kg']:,.2f}")
-                    c[5].write(row['qty'])
-                    c[6].write(row['remarks'])
-                    if c[7].button('🗑', key=f"vi_del_{row['id']}", use_container_width=True):
-                        db.delete_visual_inspection(row['id'])
-                        _get_visual_inspection_summary.clear()
-                        st.session_state.vi_rows = db.get_visual_inspections()
-                        st.rerun()
-            else:
-                st.info('Click Load or Show All to view records.')
-
-            # ── Export Excel ───────────────────────────────────────────────────
-            export_rows = st.session_state.get('vi_rows', [])
-            if export_rows:
-                import openpyxl as _xl_vi
-                from openpyxl.styles import Font as _VFont, PatternFill as _VFill, Alignment as _VAlign
-                vi_wb = _xl_vi.Workbook()
-                vi_ws = vi_wb.active
-                vi_ws.title = 'Visual Inspection'
-                vi_exp_cols = ['Date', 'Assembly Mark', 'Sub Assembly Mark', 'Weight (kg)', 'Qty', 'Remarks']
-                hdr_fill = _VFill('solid', fgColor='1E3A5F')
-                hdr_font = _VFont(bold=True, color='FFFFFF')
-                hdr_aln  = _VAlign(horizontal='center')
-                for ci, h in enumerate(vi_exp_cols, 1):
-                    cell = vi_ws.cell(row=1, column=ci, value=h)
-                    cell.fill = hdr_fill
-                    cell.font = hdr_font
-                    cell.alignment = hdr_aln
-                    vi_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 14)
-                for ri, r in enumerate(export_rows, 2):
-                    vi_ws.cell(row=ri, column=1, value=r['entry_date'])
-                    vi_ws.cell(row=ri, column=2, value=r['assembly_mark'])
-                    vi_ws.cell(row=ri, column=3, value=r['sub_assembly_mark'])
-                    vi_ws.cell(row=ri, column=4, value=r['weight_kg'])
-                    vi_ws.cell(row=ri, column=5, value=r['qty'])
-                    vi_ws.cell(row=ri, column=6, value=r['remarks'])
-                vi_exp_buf = BytesIO()
-                vi_wb.save(vi_exp_buf)
-                st.download_button(
-                    '📥 Export Excel', vi_exp_buf.getvalue(),
-                    'visual_inspection.xlsx',
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    use_container_width=True,
-                )
+        # ── Export Excel ───────────────────────────────────────────────────
+        export_rows = st.session_state.get('vi_rows', [])
+        if export_rows:
+            import openpyxl as _xl_vi
+            from openpyxl.styles import Font as _VFont, PatternFill as _VFill, Alignment as _VAlign
+            vi_wb = _xl_vi.Workbook()
+            vi_ws = vi_wb.active
+            vi_ws.title = 'Visual Inspection'
+            vi_exp_cols = ['Date', 'Assembly Mark', 'Sub Assembly Mark', 'Weight (kg)', 'Qty', 'Remarks']
+            hdr_fill = _VFill('solid', fgColor='1E3A5F')
+            hdr_font = _VFont(bold=True, color='FFFFFF')
+            hdr_aln  = _VAlign(horizontal='center')
+            for ci, h in enumerate(vi_exp_cols, 1):
+                cell = vi_ws.cell(row=1, column=ci, value=h)
+                cell.fill = hdr_fill
+                cell.font = hdr_font
+                cell.alignment = hdr_aln
+                vi_ws.column_dimensions[cell.column_letter].width = max(len(h) + 4, 14)
+            for ri, r in enumerate(export_rows, 2):
+                vi_ws.cell(row=ri, column=1, value=r['entry_date'])
+                vi_ws.cell(row=ri, column=2, value=r['assembly_mark'])
+                vi_ws.cell(row=ri, column=3, value=r['sub_assembly_mark'])
+                vi_ws.cell(row=ri, column=4, value=r['weight_kg'])
+                vi_ws.cell(row=ri, column=5, value=r['qty'])
+                vi_ws.cell(row=ri, column=6, value=r['remarks'])
+            vi_exp_buf = BytesIO()
+            vi_wb.save(vi_exp_buf)
+            st.download_button(
+                '📥 Export Excel', vi_exp_buf.getvalue(),
+                'visual_inspection.xlsx',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
