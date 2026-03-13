@@ -36,10 +36,12 @@ class _CurWrap:
 
 class _DBConn:
     """psycopg2 connection wrapper that mimics sqlite3 usage patterns.
-    Converts ? placeholders to %s and uses RealDictCursor for dict-like row access."""
+    Converts ? placeholders to %s and uses RealDictCursor for dict-like row access.
+    When created from the pool, close() returns the connection to the pool."""
 
-    def __init__(self, conn):
+    def __init__(self, conn, pool=None):
         self._conn = conn
+        self._pool = pool
 
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
@@ -51,33 +53,79 @@ class _DBConn:
         self._conn.commit()
 
     def close(self):
-        self._conn.close()
+        if self._pool is not None:
+            self._pool.putconn(self._conn)
+        else:
+            self._conn.close()
 
 
-def _conn():
+def _get_pool():
+    """Return a module-level connection pool (created once per process)."""
     import streamlit as st
     import socket
     from urllib.parse import urlparse, unquote
+    import psycopg2.pool
 
     url = st.secrets['database_url']
     p = urlparse(url)
-
-    # Resolve hostname to IPv4 — Streamlit Cloud cannot reach Supabase over IPv6
     host = p.hostname
     try:
         host = socket.getaddrinfo(host, None, socket.AF_INET)[0][4][0]
     except Exception:
-        pass  # fall back to hostname if IPv4 lookup fails
+        pass
 
-    conn = psycopg2.connect(
+    return psycopg2.pool.ThreadedConnectionPool(
+        1, 4,
         host=host,
         port=p.port or 5432,
         dbname=p.path.lstrip('/'),
         user=p.username,
         password=unquote(p.password or ''),
         sslmode='require',
+        connect_timeout=10,
+        keepalives=1,
+        keepalives_idle=60,
+        keepalives_interval=10,
+        keepalives_count=5,
     )
-    return _DBConn(conn)
+
+
+_pool = None  # module-level singleton
+
+
+def _conn():
+    global _pool
+    try:
+        if _pool is None:
+            _pool = _get_pool()
+        conn = _pool.getconn()
+        # Verify connection is alive; reset if stale
+        try:
+            conn.cursor().execute('SELECT 1')
+        except Exception:
+            try:
+                _pool.putconn(conn, close=True)
+            except Exception:
+                pass
+            conn = _pool.getconn()
+        return _DBConn(conn, _pool)
+    except Exception:
+        # Pool failed — fall back to direct connection
+        import streamlit as st
+        import socket
+        from urllib.parse import urlparse, unquote
+        url = st.secrets['database_url']
+        p = urlparse(url)
+        host = p.hostname
+        try:
+            host = socket.getaddrinfo(host, None, socket.AF_INET)[0][4][0]
+        except Exception:
+            pass
+        conn = psycopg2.connect(
+            host=host, port=p.port or 5432, dbname=p.path.lstrip('/'),
+            user=p.username, password=unquote(p.password or ''), sslmode='require',
+        )
+        return _DBConn(conn, pool=None)
 
 
 # ── Schema initialisation ──────────────────────────────────────────────────────
@@ -141,6 +189,18 @@ def init():
 
     # Data migration: rename old DELIVERY stage
     db.execute("UPDATE progress SET stage='SEND TO SITE' WHERE stage='DELIVERY'")
+    db.commit()
+
+    # Indexes for frequently filtered columns
+    for idx_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_progress_entry_date    ON progress(entry_date)",
+        "CREATE INDEX IF NOT EXISTS idx_progress_assembly_mark ON progress(assembly_mark)",
+        "CREATE INDEX IF NOT EXISTS idx_progress_stage         ON progress(stage)",
+        "CREATE INDEX IF NOT EXISTS idx_parts_assembly_mark    ON parts(assembly_mark)",
+        "CREATE INDEX IF NOT EXISTS idx_vi_assembly_mark       ON visual_inspection(assembly_mark)",
+        "CREATE INDEX IF NOT EXISTS idx_vi_entry_date          ON visual_inspection(entry_date)",
+    ]:
+        db.execute(idx_sql)
     db.commit()
 
     # Sync assembly totals from parts (fixes stale values on startup)

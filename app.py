@@ -34,16 +34,16 @@ STAGE_BADGE = {
     'SEND TO SITE':        '🟠',
 }
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_marks():
-    """Assembly mark list cached for 2 min — avoids a DB round-trip on every rerun."""
+    """Cleared on import; otherwise stable for the session."""
     return db.get_marks()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_work_orders():
     return db.get_work_orders()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_marks_by_work_order(work_order):
     return db.get_marks_by_work_order(work_order)
 
@@ -51,31 +51,31 @@ def _get_marks_by_work_order(work_order):
 def _get_stage_daily_stats():
     return db.get_stage_daily_stats()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_manhour_summary():
     return db.get_manhour_summary()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_manpower_grid(today):
     return db.get_manpower_grid(today)
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_raw_material_summary():
     return db.get_raw_material_summary()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _get_today_progress(today):
     return db.search_progress(start=str(today), end=str(today))
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_sub_assemblies(mark):
     return db.get_sub_assemblies(mark)
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_parts(mark):
     return db.get_parts(mark)
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _get_completed_stages(mark, sub):
     return db.get_completed_stages(mark, sub)
 
