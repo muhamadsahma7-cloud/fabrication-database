@@ -520,10 +520,10 @@ def import_excel(file_source):
             except: return 1
 
         stage_cols = [
-            ('FIT UP',              'FIT UP (kg)',               'FIT UP Date'),
-            ('WELDING',             'WELDING (kg)',              'WELDING Date'),
-            ('BLASTING & PAINTING', 'BLASTING & PAINTING (kg)', 'BLASTING & PAINTING Date'),
-            ('SEND TO SITE',        'SEND TO SITE (kg)',         'SEND TO SITE Date'),
+            ('FIT UP',              'FIT UP (kg)',               'FIT UP Date',                    None),
+            ('WELDING',             'WELDING (kg)',              'WELDING Date',                   None),
+            ('BLASTING & PAINTING', 'BLASTING & PAINTING (kg)', 'BLASTING & PAINTING Date',       'BLASTING & PAINTING D.O. No.'),
+            ('SEND TO SITE',        'SEND TO SITE (kg)',         'SEND TO SITE Date',              'SEND TO SITE D.O. No.'),
         ]
 
         # ── Pass 1: parse entire Excel into memory lists ──────────────────────
@@ -532,7 +532,7 @@ def import_excel(file_source):
         parts_rows     = []        # list of 12-tuples for bulk INSERT
         asm_weights    = {}        # asm -> total kg
         asm_work_orders = {}       # asm -> work_order
-        progress_map   = {}        # (asm, sub, stage) -> (total_kg, date_str)
+        progress_map   = {}        # (asm, sub, stage) -> (total_kg, date_str, do_no)
 
         for row in rows[header_row + 1:]:
             if not row or not _get(row, 'Assembly Mark'):
@@ -559,7 +559,7 @@ def import_excel(file_source):
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
             parts_rows.append((asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark))
 
-            for stage, kg_col, date_col in stage_cols:
+            for stage, kg_col, date_col, do_col in stage_cols:
                 kg = _float(_get(row, kg_col, default=0))
                 if kg > 0:
                     raw_date = _get(row, date_col, default=None)
@@ -569,11 +569,12 @@ def import_excel(file_source):
                         date_str = str(raw_date).strip()[:10]
                     else:
                         date_str = str(date.today())
+                    do_no = str(_get(row, do_col, default='') or '').strip() if do_col else ''
                     if (asm, sub, stage) in progress_map:
-                        prev_kg, prev_date = progress_map[(asm, sub, stage)]
-                        progress_map[(asm, sub, stage)] = (prev_kg + kg, prev_date)
+                        prev_kg, prev_date, prev_do = progress_map[(asm, sub, stage)]
+                        progress_map[(asm, sub, stage)] = (prev_kg + kg, prev_date, prev_do or do_no)
                     else:
-                        progress_map[(asm, sub, stage)] = (kg, date_str)
+                        progress_map[(asm, sub, stage)] = (kg, date_str, do_no)
 
         if not parts_rows:
             return 0, 0, "No valid data rows found."
@@ -609,7 +610,8 @@ def import_excel(file_source):
         # 3. Progress — delete ALL entries for every imported assembly_mark, then insert
         # non-zero entries. Deleting by assembly_mark (not by stage+kg>0) ensures stale
         # entries from previous imports are fully replaced, even if kg is now 0.
-        prog_rows  = [(ds, asm, sub, stg, kg) for (asm, sub, stg), (kg, ds) in progress_map.items()]
+        prog_rows  = [(ds, asm, sub, stg, kg, do_no)
+                      for (asm, sub, stg), (kg, ds, do_no) in progress_map.items()]
         prog_count = 0
         if asm_order:
             psycopg2.extras.execute_values(
@@ -622,7 +624,7 @@ def import_excel(file_source):
             psycopg2.extras.execute_values(
                 cur,
                 "INSERT INTO progress "
-                "(entry_date, assembly_mark, sub_assembly_mark, stage, weight_kg) VALUES %s",
+                "(entry_date, assembly_mark, sub_assembly_mark, stage, weight_kg, delivery_order_no) VALUES %s",
                 prog_rows,
             )
             raw.commit()
@@ -1078,8 +1080,10 @@ def get_master_export():
             pr.welding_dates                                                 AS "WELDING Date",
             CASE WHEN pr.blasting_done = 1 THEN p.total_weight_kg ELSE 0 END AS "BLASTING & PAINTING (kg)",
             pr.blasting_dates                                                AS "BLASTING & PAINTING Date",
+            pr.blasting_do                                                   AS "BLASTING & PAINTING D.O. No.",
             CASE WHEN pr.sendsite_done = 1 THEN p.total_weight_kg ELSE 0 END AS "SEND TO SITE (kg)",
-            pr.sendsite_dates                                                AS "SEND TO SITE Date"
+            pr.sendsite_dates                                                AS "SEND TO SITE Date",
+            pr.sendsite_do                                                   AS "SEND TO SITE D.O. No."
         FROM parts p
         JOIN assemblies a ON p.assembly_mark = a.assembly_mark
         LEFT JOIN (
@@ -1093,7 +1097,9 @@ def get_master_export():
                 STRING_AGG(CASE WHEN stage='FIT UP'              THEN entry_date END, ',') AS fitup_dates,
                 STRING_AGG(CASE WHEN stage='WELDING'             THEN entry_date END, ',') AS welding_dates,
                 STRING_AGG(CASE WHEN stage='BLASTING & PAINTING' THEN entry_date END, ',') AS blasting_dates,
-                STRING_AGG(CASE WHEN stage='SEND TO SITE'        THEN entry_date END, ',') AS sendsite_dates
+                STRING_AGG(CASE WHEN stage='SEND TO SITE'        THEN entry_date END, ',') AS sendsite_dates,
+                MAX(CASE WHEN stage='BLASTING & PAINTING' THEN delivery_order_no END)      AS blasting_do,
+                MAX(CASE WHEN stage='SEND TO SITE'        THEN delivery_order_no END)      AS sendsite_do
             FROM progress
             GROUP BY assembly_mark, sub_assembly_mark
         ) pr ON p.assembly_mark = pr.assembly_mark

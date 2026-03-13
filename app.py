@@ -1033,8 +1033,8 @@ def page_manage():
                        'Profile 2', 'Grade', 'Remark',
                        'FIT UP (kg)', 'FIT UP Date',
                        'WELDING (kg)', 'WELDING Date',
-                       'BLASTING & PAINTING (kg)', 'BLASTING & PAINTING Date',
-                       'SEND TO SITE (kg)', 'SEND TO SITE Date']
+                       'BLASTING & PAINTING (kg)', 'BLASTING & PAINTING Date', 'BLASTING & PAINTING D.O. No.',
+                       'SEND TO SITE (kg)', 'SEND TO SITE Date', 'SEND TO SITE D.O. No.']
         hdr_fill = _Fill('solid', fgColor='1E3A5F')
         hdr_font = _Font(bold=True, color='FFFFFF')
         for col, h in enumerate(tpl_headers, 1):
@@ -1115,10 +1115,12 @@ def page_manage():
                 ('FIT UP Date',                14, None),
                 ('WELDING (kg)',               13, '#,##0.00'),
                 ('WELDING Date',               14, None),
-                ('BLASTING & PAINTING (kg)',   22, '#,##0.00'),
-                ('BLASTING & PAINTING Date',   22, None),
-                ('SEND TO SITE (kg)',          16, '#,##0.00'),
-                ('SEND TO SITE Date',          16, None),
+                ('BLASTING & PAINTING (kg)',        22, '#,##0.00'),
+                ('BLASTING & PAINTING Date',        22, None),
+                ('BLASTING & PAINTING D.O. No.',    24, None),
+                ('SEND TO SITE (kg)',               16, '#,##0.00'),
+                ('SEND TO SITE Date',               16, None),
+                ('SEND TO SITE D.O. No.',           20, None),
             ]
 
             hdr_fill = _Fill('solid', fgColor='1E3A5F')
