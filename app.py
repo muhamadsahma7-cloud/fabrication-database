@@ -83,6 +83,11 @@ def _get_completed_stages(mark, sub):
 def _get_visual_inspection_summary():
     return db.get_visual_inspection_summary()
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _vi_passed(mark, sub):
+    """Cached visual inspection check — avoids a DB hit per sub-assembly on every validate."""
+    return db.visual_inspection_passed(mark, sub)
+
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -410,7 +415,7 @@ def page_daily_entry():
                                 prev_stage = db.STAGES[stage_idx - 1]
                                 if prev_stage not in completed and prev_stage not in queued_stages:
                                     errors.append(f'{label}: "{prev_stage}" must be completed first.')
-                            if stage == 'BLASTING & PAINTING' and not db.visual_inspection_passed(mark, s):
+                            if stage == 'BLASTING & PAINTING' and not _vi_passed(mark, s):
                                 errors.append(f'{label}: Visual Inspection must be recorded before Blasting & Painting.')
 
                     if errors:
@@ -430,7 +435,6 @@ def page_daily_entry():
                             })
                         n = len(check_subs)
                         st.success(f'Added {n} item{"s" if n > 1 else ""} to queue.')
-                        st.rerun()
 
     # ── Right: QR Generator + Queue + Saved ──────────────────────────────────
     with col_right:
