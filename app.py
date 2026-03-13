@@ -157,11 +157,11 @@ def show_sidebar():
             pages = ['📅 Report', '📊 Progress', '📈 Summary', '🚚 Delivery',
                      '📦 Raw Material', '🖼️ Drawing', '🔍 Visual Inspection']
         elif user['role'] == 'admin':
-            pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
+            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress',
                      '📈 Summary', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing',
                      '🔍 Visual Inspection', '⚙️ Manage']
         else:
-            pages = ['✏️ Daily Entry', '👷 Manpower', '📅 Report', '📊 Progress',
+            pages = ['✏️ Daily Entry', '📅 Report', '📊 Progress',
                      '📈 Summary', '🚚 Delivery', '📦 Raw Material', '🖼️ Drawing',
                      '🔍 Visual Inspection']
 
@@ -575,26 +575,6 @@ def page_report():
                 d = weld_stats['days']
                 st.metric('Avg/Day', f'{weld_stats["avg_per_day"]:,.1f} kg',
                           f'{weld_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
-
-    mh = _get_manhour_summary()
-    today_grid = _get_manpower_grid(date.today())
-    today_mh   = sum(
-        count * db.SHIFT_HOURS[sk]
-        for shifts in today_grid.values()
-        for sk, count in shifts.items()
-    )
-    st.divider()
-    st.markdown('**Manhours**')
-    mh_cols = st.columns(3)
-    with mh_cols[0]:
-        st.metric("Today's Manhours", f"{today_mh:,.1f} hrs")
-    with mh_cols[1]:
-        st.metric('Avg Manhour/Day',
-                  f"{mh['avg_per_day']:,.1f} hrs",
-                  f"{mh['total_manhours']:,.1f} hrs ÷ {mh['total_days']} day{'s' if mh['total_days']!=1 else ''}"
-                  if mh['total_days'] else None)
-    with mh_cols[2]:
-        st.metric('Total Manhours', f"{mh['total_manhours']:,.1f} hrs")
 
     # Workfront kg = raw material total kg received × 90% − total FIT UP done
     rm_total_kg  = _get_raw_material_summary().get('total_kg', 0) or 0
@@ -1792,8 +1772,6 @@ def main():
 
     if '✏️' in page:
         page_daily_entry()
-    elif '👷' in page:
-        page_manpower()
     elif '📅' in page:
         page_report()
     elif '📊' in page:
