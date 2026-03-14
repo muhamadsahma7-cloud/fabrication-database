@@ -454,10 +454,20 @@ def page_daily_entry():
         with st.container(border=True):
             st.subheader(f'Queue  ({len(st.session_state.queue)} items)')
             if st.session_state.queue:
-                df_q = pd.DataFrame(st.session_state.queue)
-                df_q.columns = ['Date', 'Assembly', 'Sub-Assembly', 'Stage',
-                                 'Weight (kg)', 'Qty', 'D.O. No.', 'Remarks']
-                st.dataframe(df_q, use_container_width=True, hide_index=True)
+                # Header row
+                hc = st.columns([2, 2, 2, 1.5, 1, 0.6])
+                for col, lbl in zip(hc, ['Assembly', 'Sub-Assembly', 'Stage', 'Weight (kg)', 'Qty', '']):
+                    col.markdown(f'**{lbl}**')
+                for i, item in enumerate(st.session_state.queue):
+                    rc = st.columns([2, 2, 2, 1.5, 1, 0.6])
+                    rc[0].write(item[1])   # assembly_mark
+                    rc[1].write(item[2])   # sub_assembly_mark
+                    rc[2].write(item[3])   # stage
+                    rc[3].write(item[4])   # weight_kg
+                    rc[4].write(item[5])   # qty
+                    if rc[5].button('🗑', key=f'q_del_{i}', use_container_width=True):
+                        st.session_state.queue.pop(i)
+                        st.rerun()
 
                 c1, c2 = st.columns(2)
                 with c1:
