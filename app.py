@@ -460,11 +460,11 @@ def page_daily_entry():
                     col.markdown(f'**{lbl}**')
                 for i, item in enumerate(st.session_state.queue):
                     rc = st.columns([2, 2, 2, 1.5, 1, 0.6])
-                    rc[0].write(item[1])   # assembly_mark
-                    rc[1].write(item[2])   # sub_assembly_mark
-                    rc[2].write(item[3])   # stage
-                    rc[3].write(item[4])   # weight_kg
-                    rc[4].write(item[5])   # qty
+                    rc[0].write(item['mark'])
+                    rc[1].write(item['sub'])
+                    rc[2].write(item['stage'])
+                    rc[3].write(item['weight'])
+                    rc[4].write(item['qty'])
                     if rc[5].button('🗑', key=f'q_del_{i}', use_container_width=True):
                         st.session_state.queue.pop(i)
                         st.rerun()
