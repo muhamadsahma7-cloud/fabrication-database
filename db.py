@@ -1074,6 +1074,17 @@ def get_summary():
     return result
 
 
+def get_on_hold_weight():
+    """Total weight_kg of parts whose remark contains 'on hold' (case-insensitive)."""
+    db = _conn()
+    row = db.execute(
+        "SELECT COALESCE(SUM(total_weight_kg), 0) AS kg "
+        "FROM parts WHERE UPPER(remark) LIKE '%ON HOLD%'"
+    ).fetchone()
+    db.close()
+    return row['kg'] if row else 0
+
+
 def get_sub_assemblies(assembly_mark):
     """Return distinct sub-assembly marks for a given assembly."""
     db = _conn()

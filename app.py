@@ -51,6 +51,10 @@ def _get_marks_by_work_order(work_order):
 def _get_stage_daily_stats():
     return db.get_stage_daily_stats()
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_project_summary():
+    return db.get_summary()
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _get_manhour_summary():
     return db.get_manhour_summary()
@@ -590,16 +594,17 @@ def page_report():
                 st.metric('Avg/Day', f'{weld_stats["avg_per_day"]:,.1f} kg',
                           f'{weld_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
 
-    # Workfront kg = raw material total kg received × 90% − total FIT UP done
-    rm_total_kg  = _get_raw_material_summary().get('total_kg', 0) or 0
-    fitup_total  = fitup_stats['total_kg']
-    workfront_kg = rm_total_kg * 0.90 - fitup_total
+    # Workfront kg = total project weight − FIT UP done − on-hold parts
+    proj_total_kg = _get_project_summary().get('total', 0) or 0
+    fitup_total   = fitup_stats['total_kg']
+    on_hold_kg    = db.get_on_hold_weight()
+    workfront_kg  = proj_total_kg - fitup_total - on_hold_kg
     st.divider()
     st.markdown('**Workfront**')
     wf_cols = st.columns(2)
     with wf_cols[0]:
         st.metric('FIT UP Workfront kg', f'{workfront_kg:,.1f} kg',
-                  f'{rm_total_kg:,.1f} × 90% − {fitup_total:,.1f} FIT UP')
+                  f'{proj_total_kg:,.1f} total − {fitup_total:,.1f} FIT UP − {on_hold_kg:,.1f} on hold')
     with wf_cols[1]:
         weld_total = weld_stats['total_kg']
         welding_workfront_kg = fitup_total - weld_total
