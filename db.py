@@ -1348,6 +1348,36 @@ def add_visual_inspection(entry_date, mark, sub_mark, weight_kg, qty, remarks=''
     return rid
 
 
+def bulk_add_visual_inspection(entry_date, records):
+    """Insert multiple VI records in one connection.
+    records: list of dicts with keys mark, sub, weight_kg, qty, remarks.
+    Skips duplicates (same date/mark/sub already exists).
+    Returns count of rows inserted.
+    """
+    if not records:
+        return 0
+    c = _conn()
+    count = 0
+    for r in records:
+        exists = c.execute(
+            "SELECT 1 FROM visual_inspection "
+            "WHERE entry_date=? AND assembly_mark=? AND sub_assembly_mark=?",
+            (str(entry_date), r['mark'].upper(), r['sub'].upper())
+        ).fetchone()
+        if not exists:
+            c.execute(
+                "INSERT INTO visual_inspection "
+                "(entry_date, assembly_mark, sub_assembly_mark, weight_kg, qty, remarks) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(entry_date), r['mark'].upper(), r['sub'].upper(),
+                 float(r['weight_kg']), int(r.get('qty', 1)), r.get('remarks', ''))
+            )
+            count += 1
+    c.commit()
+    c.close()
+    return count
+
+
 def get_visual_inspections(start=None, end=None):
     c = _conn()
     if start and end:

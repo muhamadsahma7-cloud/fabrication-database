@@ -631,11 +631,19 @@ def page_report():
         missing_vi = db.get_missing_visual_inspections()
         if missing_vi:
             import pandas as pd
-            df_missing = pd.DataFrame(missing_vi, columns=['assembly_mark', 'sub_assembly_mark', 'welding_kg'])
+            df_missing = pd.DataFrame(missing_vi)
             df_missing.columns = ['Assembly Mark', 'Sub Assembly', 'Welding (kg)']
             df_missing['Welding (kg)'] = df_missing['Welding (kg)'].map('{:,.2f}'.format)
             st.warning(f'⚠️ {len(missing_vi)} sub-assemblies completed Welding but have no VI record.')
             st.dataframe(df_missing, use_container_width=True, hide_index=True)
+            vi_date = st.date_input('VI Date', value=date.today(), key='bulk_vi_date')
+            if st.button('✅ Record VI for All', type='primary', key='bulk_vi_all'):
+                records = [{'mark': r['assembly_mark'], 'sub': r['sub_assembly_mark'],
+                            'weight_kg': r['welding_kg'], 'qty': 1} for r in missing_vi]
+                n = db.bulk_add_visual_inspection(vi_date, records)
+                _get_visual_inspection_summary.clear()
+                st.success(f'Recorded VI for {n} sub-assemblies.')
+                st.rerun()
         else:
             st.success('✅ All welded sub-assemblies have Visual Inspection records.')
     st.divider()
