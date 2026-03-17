@@ -1079,8 +1079,8 @@ def get_on_hold_weight():
     db = _conn()
     row = db.execute(
         "SELECT COALESCE(SUM(total_weight_kg), 0) AS kg "
-        "FROM parts WHERE UPPER(remark) LIKE ?",
-        ('%ON HOLD%',)
+        "FROM parts WHERE UPPER(remark) LIKE ? OR UPPER(remark) LIKE ?",
+        ('%ON HOLD%', '%ON-HOLD%')
     ).fetchone()
     db.close()
     return row['kg'] if row else 0
