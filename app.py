@@ -630,7 +630,6 @@ def page_report():
     with st.expander('🔍 Missing Visual Inspection (Welding done, VI pending)', expanded=False):
         missing_vi = db.get_missing_visual_inspections()
         if missing_vi:
-            import pandas as pd
             df_missing = pd.DataFrame(missing_vi)
             df_missing.columns = ['Assembly Mark', 'Sub Assembly', 'Welding (kg)']
             df_missing['Welding (kg)'] = df_missing['Welding (kg)'].map('{:,.2f}'.format)
