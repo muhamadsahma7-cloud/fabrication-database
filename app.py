@@ -626,6 +626,18 @@ def page_report():
         if ready_kg < 0:
             st.warning(f'⚠️ B&P entries exceed inspected kg by {abs(ready_kg):,.1f} kg. '
                        'Check for missing Visual Inspection records.')
+    # ── Missing Visual Inspection ──────────────────────────────────────────────
+    with st.expander('🔍 Missing Visual Inspection (Welding done, VI pending)', expanded=False):
+        missing_vi = db.get_missing_visual_inspections()
+        if missing_vi:
+            import pandas as pd
+            df_missing = pd.DataFrame(missing_vi, columns=['assembly_mark', 'sub_assembly_mark', 'welding_kg'])
+            df_missing.columns = ['Assembly Mark', 'Sub Assembly', 'Welding (kg)']
+            df_missing['Welding (kg)'] = df_missing['Welding (kg)'].map('{:,.2f}'.format)
+            st.warning(f'⚠️ {len(missing_vi)} sub-assemblies completed Welding but have no VI record.')
+            st.dataframe(df_missing, use_container_width=True, hide_index=True)
+        else:
+            st.success('✅ All welded sub-assemblies have Visual Inspection records.')
     st.divider()
 
     # Placeholder: summary metrics will be injected here (above filters)

@@ -1374,6 +1374,26 @@ def get_visual_inspection_summary():
     return dict(row) if row else {'entries': 0, 'total_kg': 0}
 
 
+def get_missing_visual_inspections():
+    """Return sub-assemblies that have WELDING recorded but no VI record yet."""
+    c = _conn()
+    rows = c.execute("""
+        SELECT p.assembly_mark, p.sub_assembly_mark,
+               COALESCE(SUM(p.weight_kg), 0) AS welding_kg
+        FROM progress p
+        WHERE p.stage = 'WELDING'
+          AND NOT EXISTS (
+              SELECT 1 FROM visual_inspection vi
+              WHERE vi.assembly_mark     = p.assembly_mark
+                AND vi.sub_assembly_mark = p.sub_assembly_mark
+          )
+        GROUP BY p.assembly_mark, p.sub_assembly_mark
+        ORDER BY p.assembly_mark, p.sub_assembly_mark
+    """).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
 def delete_visual_inspection(rid):
     c = _conn()
     c.execute("DELETE FROM visual_inspection WHERE id=?", (rid,))
