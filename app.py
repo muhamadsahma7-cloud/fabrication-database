@@ -47,11 +47,11 @@ def _get_work_orders():
 def _get_marks_by_work_order(work_order):
     return db.get_marks_by_work_order(work_order)
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_stage_daily_stats():
     return db.get_stage_daily_stats()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _get_project_summary(as_of_date=None):
     return db.get_summary(as_of_date)
 
@@ -91,6 +91,14 @@ def _get_visual_inspection_summary():
 def _vi_passed(mark, sub):
     """Cached visual inspection check — avoids a DB hit per sub-assembly on every validate."""
     return db.visual_inspection_passed(mark, sub)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_on_hold_weight():
+    return db.get_on_hold_weight()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_missing_vi():
+    return db.get_missing_visual_inspections()
 
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -614,7 +622,7 @@ def page_report():
     # Workfront kg = total project weight − FIT UP done − on-hold parts
     proj_total_kg = proj_total
     fitup_total   = fitup_stats['total_kg']
-    on_hold_kg    = db.get_on_hold_weight()
+    on_hold_kg    = _get_on_hold_weight()
     workfront_kg  = proj_total_kg - fitup_total - on_hold_kg
     st.divider()
     st.markdown('**Workfront**')
@@ -645,7 +653,7 @@ def page_report():
                        'Check for missing Visual Inspection records.')
     # ── Missing Visual Inspection ──────────────────────────────────────────────
     with st.expander('🔍 Missing Visual Inspection (Welding done, VI pending)', expanded=False):
-        missing_vi = db.get_missing_visual_inspections()
+        missing_vi = _get_missing_vi()
         if missing_vi:
             df_missing = pd.DataFrame(missing_vi)
             df_missing.columns = ['Assembly Mark', 'Sub Assembly', 'Welding (kg)']
@@ -658,6 +666,7 @@ def page_report():
                             'weight_kg': r['welding_kg'], 'qty': 1} for r in missing_vi]
                 n = db.bulk_add_visual_inspection(vi_date, records)
                 _get_visual_inspection_summary.clear()
+                _get_missing_vi.clear()
                 st.success(f'Recorded VI for {n} sub-assemblies.')
                 st.rerun()
         else:
