@@ -1498,25 +1498,18 @@ def page_summary():
 
     # ── Load data ──────────────────────────────────────────────────────────────
     summary    = db.get_summary()
-    mh_summary = db.get_manhour_summary()
     daily_prod = db.get_daily_production()
-    daily_mh   = db.get_daily_manhours()
 
     project_total = summary.get('total', 0) or 0
     stage_done    = {s: summary.get(s, 0) or 0 for s in db.STAGES}
     stage_pcts    = [min(stage_done[s] / project_total * 100, 100) if project_total else 0
                      for s in db.STAGES]
     overall_pct   = sum(stage_pcts) / len(db.STAGES) if db.STAGES else 0
-    total_mh      = mh_summary.get('total_manhours', 0) or 0
-    sendsite_done = stage_done.get('SEND TO SITE', 0)
-    productivity  = sendsite_done / total_mh if total_mh else 0
 
     # ── KPI row ────────────────────────────────────────────────────────────────
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric('Total Tonnage (kg)',    f'{project_total:,.1f}')
-    k2.metric('Overall Completion',    f'{overall_pct:.1f}%',    'avg of 4 stage %')
-    k3.metric('Total Manhours',        f'{total_mh:,.1f} hrs',   f'{mh_summary.get("total_days",0)} days logged')
-    k4.metric('Productivity',          f'{productivity:.3f} kg/hr', 'send-to-site per manhour')
+    k1, k2 = st.columns(2)
+    k1.metric('Total Tonnage (kg)', f'{project_total:,.1f}')
+    k2.metric('Overall Completion', f'{overall_pct:.1f}%', 'avg of 4 stage %')
 
     st.divider()
 
@@ -1626,42 +1619,6 @@ def page_summary():
         else:
             st.info('No production data yet.')
 
-    st.divider()
-
-    # ── Manhour vs Production (dual axis) ──────────────────────────────────────
-    st.subheader('Manhour vs Production')
-    if daily_prod and daily_mh:
-        mh_df  = pd.DataFrame(daily_mh)
-        mh_df['entry_date'] = pd.to_datetime(mh_df['entry_date'])
-
-        prod_daily = pd.DataFrame(daily_prod)
-        prod_daily['entry_date'] = pd.to_datetime(prod_daily['entry_date'])
-        prod_day   = prod_daily.groupby('entry_date')['kg'].sum().reset_index()
-        prod_day.columns = ['entry_date', 'kg']
-
-        merged = pd.merge(mh_df, prod_day, on='entry_date', how='outer').fillna(0)
-        merged = merged.sort_values('entry_date')
-
-        fig_mh = go.Figure()
-        fig_mh.add_trace(go.Bar(
-            x=merged['entry_date'], y=merged['manhours'],
-            name='Manhours (hrs)', marker_color='#AEC6E8', yaxis='y1',
-        ))
-        fig_mh.add_trace(go.Scatter(
-            x=merged['entry_date'], y=merged['kg'],
-            name='Production (kg)', mode='lines+markers',
-            line=dict(color='#E45756', width=2), marker=dict(size=5), yaxis='y2',
-        ))
-        fig_mh.update_layout(
-            height=320, margin=dict(l=0, r=0, t=10, b=10),
-            yaxis=dict(title='Manhours (hrs)', showgrid=False),
-            yaxis2=dict(title='Production (kg)', overlaying='y', side='right', showgrid=False),
-            legend=dict(orientation='h', yanchor='bottom', y=1.02),
-            barmode='group',
-        )
-        st.plotly_chart(fig_mh, use_container_width=True)
-    else:
-        st.info('No manhour or production data yet.')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
