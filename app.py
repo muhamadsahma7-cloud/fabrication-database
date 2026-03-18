@@ -928,19 +928,26 @@ def page_delivery():
         df.columns = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
                       'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
 
-        # ── Summary by D.O. No. ────────────────────────────────────────────────
+        # ── Summary by Activity ────────────────────────────────────────────────
         st.subheader('Summary by D.O. No.')
-        summary_do = (
-            df.groupby(['D.O. No.', 'Type'], dropna=False)
-            .agg(Total_kg=('Weight (kg)', 'sum'), Assemblies=('Assembly', 'nunique'))
-            .reset_index()
-        )
-        summary_do.columns = ['D.O. No.', 'Type', 'Total (kg)', 'Assemblies']
-        summary_do['Total (kg)'] = summary_do['Total (kg)'].map('{:,.2f}'.format)
-        st.dataframe(summary_do, use_container_width=True, hide_index=True)
+        activities = df['Type'].dropna().unique().tolist()
+        act_cols = st.columns(len(activities)) if activities else []
+        for col, act in zip(act_cols, activities):
+            with col:
+                st.markdown(f"**{act}**")
+                sub = df[df['Type'] == act]
+                grp = (
+                    sub.groupby('D.O. No.', dropna=False)
+                    .agg(**{'Total (kg)': ('Weight (kg)', 'sum'), 'Assemblies': ('Assembly', 'nunique')})
+                    .reset_index()
+                )
+                grp['Total (kg)'] = grp['Total (kg)'].map('{:,.2f}'.format)
+                st.dataframe(grp, use_container_width=True, hide_index=True)
+                act_total = sub['Weight (kg)'].sum()
+                st.caption(f"Subtotal: **{act_total:,.2f} kg**")
 
         total_kg = df['Weight (kg)'].sum()
-        st.caption(f"Total delivered (filtered period): **{total_kg:,.2f} kg**")
+        st.caption(f"Grand total (filtered period): **{total_kg:,.2f} kg**")
 
         st.divider()
         st.subheader('Detail')
