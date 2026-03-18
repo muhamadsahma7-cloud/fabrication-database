@@ -570,6 +570,20 @@ def page_manpower():
 def page_report():
     st.header('📅 Report')
 
+    # ── Project Totals ────────────────────────────────────────────────────────
+    proj_summary  = _get_project_summary()
+    proj_total    = proj_summary.get('total', 0) or 0
+    proj_by_stage = {s: proj_summary.get(s, 0) or 0 for s in db.STAGES}
+
+    st.markdown('**Project Total**')
+    pt_cols = st.columns(1 + len(db.STAGES))
+    pt_cols[0].metric('Total Weight (kg)', f'{proj_total:,.1f}')
+    for i, s in enumerate(db.STAGES):
+        pct = min(proj_by_stage[s] / proj_total * 100, 100) if proj_total else 0
+        pt_cols[i + 1].metric(f'{STAGE_BADGE[s]} {s}', f'{proj_by_stage[s]:,.1f} kg',
+                              f'{pct:.1f}%')
+    st.divider()
+
     # ── Date selector ─────────────────────────────────────────────────────────
     selected_date = st.date_input('Select Date', value=date.today(), key='rpt_selected_date')
 
