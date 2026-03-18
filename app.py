@@ -404,6 +404,8 @@ def page_daily_entry():
                             db.add_visual_inspection(entry_date, mark, s,
                                                      weights_map.get(s, 0.0), qty, remarks)
                         _get_visual_inspection_summary.clear()
+                        _vi_passed.clear()
+                        _get_missing_vi.clear()
                         n = len(check_subs)
                         st.success(f'Saved {n} inspection record{"s" if n > 1 else ""}.')
                         st.rerun()
