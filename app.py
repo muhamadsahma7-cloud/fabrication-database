@@ -96,6 +96,11 @@ def _vi_passed(mark, sub):
 def _get_on_hold_weight():
     return db.get_on_hold_weight()
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_all_daily_stage_totals():
+    """All (entry_date, stage, kg) rows — loaded once, filtered in Python by date."""
+    return db.get_all_daily_stage_totals()
+
 @st.cache_data(ttl=120, show_spinner=False)
 def _get_missing_vi():
     return db.get_missing_visual_inspections()
@@ -581,11 +586,26 @@ def page_report():
     # ── Date selector ─────────────────────────────────────────────────────────
     selected_date = st.date_input('Select Date', value=date.today(), key='rpt_selected_date')
 
-    # ── Project Totals (cumulative up to selected date) ────────────────────────
-    proj_summary  = _get_project_summary(selected_date)
-    proj_total    = proj_summary.get('total', 0) or 0
-    proj_by_stage = {s: proj_summary.get(s, 0) or 0 for s in db.STAGES}
+    # ── All daily stage totals — loaded once, filtered in Python ──────────────
+    all_daily   = _get_all_daily_stage_totals()   # [{entry_date, stage, kg}, ...]
+    sel_str     = str(selected_date)
 
+    # Cumulative: sum all rows where entry_date <= selected_date
+    proj_by_stage = {s: 0.0 for s in db.STAGES}
+    for row in all_daily:
+        if row['entry_date'] <= sel_str:
+            if row['stage'] in proj_by_stage:
+                proj_by_stage[row['stage']] += row['kg']
+
+    # Daily: sum rows where entry_date == selected_date
+    today_by_stage = {s: 0.0 for s in db.STAGES}
+    for row in all_daily:
+        if row['entry_date'] == sel_str and row['stage'] in today_by_stage:
+            today_by_stage[row['stage']] += row['kg']
+
+    proj_total = (_get_project_summary().get('total', 0) or 0)
+
+    # ── Project Totals (cumulative up to selected date) ────────────────────────
     st.markdown(f"**Cumulative Progress as of {selected_date.strftime('%d %b %Y')}**")
     pt_cols = st.columns(1 + len(db.STAGES))
     pt_cols[0].metric('Total Weight (kg)', f'{proj_total:,.1f}')
@@ -595,12 +615,7 @@ def page_report():
                               f'{pct:.1f}%')
     st.divider()
 
-    # ── Daily Activity ────────────────────────────────────────────────────────
-    today_rows = _get_today_progress(selected_date)
-    today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
-                      for s in db.STAGES}
-
-    # Single aggregate query replaces loading all FIT UP / WELDING rows
+    # stage_stats for avg/day (all-time aggregate, date-independent)
     stage_stats  = _get_stage_daily_stats()
     fitup_stats  = stage_stats.get('FIT UP',  {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
     weld_stats   = stage_stats.get('WELDING', {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
@@ -619,9 +634,10 @@ def page_report():
                 st.metric('Avg/Day', f'{weld_stats["avg_per_day"]:,.1f} kg',
                           f'{weld_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
 
-    # Workfront kg = total project weight − FIT UP done − on-hold parts
+    # Workfront kg = total project weight − FIT UP done (cumulative) − on-hold parts
     proj_total_kg = proj_total
-    fitup_total   = fitup_stats['total_kg']
+    fitup_total   = proj_by_stage.get('FIT UP', 0)
+    weld_total    = proj_by_stage.get('WELDING', 0)
     on_hold_kg    = _get_on_hold_weight()
     workfront_kg  = proj_total_kg - fitup_total - on_hold_kg
     st.divider()
@@ -631,7 +647,6 @@ def page_report():
         st.metric('FIT UP Workfront kg', f'{workfront_kg:,.1f} kg',
                   f'{proj_total_kg:,.1f} total − {fitup_total:,.1f} FIT UP − {on_hold_kg:,.1f} on hold')
     with wf_cols[1]:
-        weld_total = weld_stats['total_kg']
         welding_workfront_kg = fitup_total - weld_total
         st.metric('Welding Workfront kg', f'{welding_workfront_kg:,.1f} kg',
                   f'{fitup_total:,.1f} FIT UP − {weld_total:,.1f} Welding')

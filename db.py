@@ -1083,6 +1083,20 @@ def get_summary(as_of_date=None):
     return result
 
 
+def get_all_daily_stage_totals():
+    """Return list of {entry_date, stage, kg} for every date+stage that has progress.
+    Used by the Report tab to compute both cumulative and daily totals in Python,
+    avoiding a new DB round-trip each time the user changes the selected date."""
+    db = _conn()
+    rows = db.execute(
+        "SELECT p.entry_date, p.stage, COALESCE(SUM(p.weight_kg),0) AS kg "
+        "FROM progress p JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
+        "GROUP BY p.entry_date, p.stage"
+    ).fetchall()
+    db.close()
+    return [dict(r) for r in rows]
+
+
 def get_on_hold_weight():
     """Total weight_kg of parts whose remark contains 'on hold' (case-insensitive)."""
     db = _conn()
