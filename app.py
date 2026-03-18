@@ -570,8 +570,11 @@ def page_manpower():
 def page_report():
     st.header('📅 Report')
 
-    # ── Today's Activity ──────────────────────────────────────────────────────
-    today_rows = _get_today_progress(date.today())
+    # ── Date selector ─────────────────────────────────────────────────────────
+    selected_date = st.date_input('Select Date', value=date.today(), key='rpt_selected_date')
+
+    # ── Daily Activity ────────────────────────────────────────────────────────
+    today_rows = _get_today_progress(selected_date)
     today_by_stage = {s: sum(r['weight_kg'] for r in today_rows if r['stage'] == s)
                       for s in db.STAGES}
 
@@ -580,7 +583,7 @@ def page_report():
     fitup_stats  = stage_stats.get('FIT UP',  {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
     weld_stats   = stage_stats.get('WELDING', {'total_kg': 0, 'days': 0, 'avg_per_day': 0})
 
-    st.markdown(f"**Today's Activity** — {date.today().strftime('%d %b %Y')}")
+    st.markdown(f"**Daily Activity** — {selected_date.strftime('%d %b %Y')}")
     tcols = st.columns(len(db.STAGES))
     for i, s in enumerate(db.STAGES):
         with tcols[i]:
