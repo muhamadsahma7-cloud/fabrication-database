@@ -1057,16 +1057,25 @@ def get_stage_daily_stats():
     return result
 
 
-def get_summary():
+def get_summary(as_of_date=None):
     db = _conn()
     total = db.execute(
         "SELECT COALESCE(SUM(total_weight_kg),0) AS total FROM assemblies"
     ).fetchone()['total']
-    rows  = db.execute(
-        "SELECT p.stage, COALESCE(SUM(p.weight_kg),0) as done "
-        "FROM progress p JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
-        "GROUP BY p.stage"
-    ).fetchall()
+    if as_of_date:
+        rows = db.execute(
+            "SELECT p.stage, COALESCE(SUM(p.weight_kg),0) as done "
+            "FROM progress p JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
+            "WHERE p.entry_date <= ? "
+            "GROUP BY p.stage",
+            (str(as_of_date),)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT p.stage, COALESCE(SUM(p.weight_kg),0) as done "
+            "FROM progress p JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
+            "GROUP BY p.stage"
+        ).fetchall()
     db.close()
     result = {'total': total}
     for r in rows:

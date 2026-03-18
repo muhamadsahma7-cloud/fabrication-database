@@ -52,8 +52,8 @@ def _get_stage_daily_stats():
     return db.get_stage_daily_stats()
 
 @st.cache_data(ttl=120, show_spinner=False)
-def _get_project_summary():
-    return db.get_summary()
+def _get_project_summary(as_of_date=None):
+    return db.get_summary(as_of_date)
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _get_manhour_summary():
@@ -570,12 +570,15 @@ def page_manpower():
 def page_report():
     st.header('📅 Report')
 
-    # ── Project Totals ────────────────────────────────────────────────────────
-    proj_summary  = _get_project_summary()
+    # ── Date selector ─────────────────────────────────────────────────────────
+    selected_date = st.date_input('Select Date', value=date.today(), key='rpt_selected_date')
+
+    # ── Project Totals (cumulative up to selected date) ────────────────────────
+    proj_summary  = _get_project_summary(selected_date)
     proj_total    = proj_summary.get('total', 0) or 0
     proj_by_stage = {s: proj_summary.get(s, 0) or 0 for s in db.STAGES}
 
-    st.markdown('**Project Total**')
+    st.markdown(f"**Cumulative Progress as of {selected_date.strftime('%d %b %Y')}**")
     pt_cols = st.columns(1 + len(db.STAGES))
     pt_cols[0].metric('Total Weight (kg)', f'{proj_total:,.1f}')
     for i, s in enumerate(db.STAGES):
@@ -583,9 +586,6 @@ def page_report():
         pt_cols[i + 1].metric(f'{STAGE_BADGE[s]} {s}', f'{proj_by_stage[s]:,.1f} kg',
                               f'{pct:.1f}%')
     st.divider()
-
-    # ── Date selector ─────────────────────────────────────────────────────────
-    selected_date = st.date_input('Select Date', value=date.today(), key='rpt_selected_date')
 
     # ── Daily Activity ────────────────────────────────────────────────────────
     today_rows = _get_today_progress(selected_date)
@@ -612,7 +612,7 @@ def page_report():
                           f'{weld_stats["total_kg"]:,.1f} kg ÷ {d} day{"s" if d!=1 else ""}')
 
     # Workfront kg = total project weight − FIT UP done − on-hold parts
-    proj_total_kg = _get_project_summary().get('total', 0) or 0
+    proj_total_kg = proj_total
     fitup_total   = fitup_stats['total_kg']
     on_hold_kg    = db.get_on_hold_weight()
     workfront_kg  = proj_total_kg - fitup_total - on_hold_kg
