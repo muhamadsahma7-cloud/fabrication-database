@@ -1094,7 +1094,7 @@ def get_all_daily_stage_totals():
         "GROUP BY p.entry_date, p.stage"
     ).fetchall()
     db.close()
-    return [dict(r) for r in rows]
+    return [{'entry_date': str(r['entry_date']), 'stage': r['stage'], 'kg': float(r['kg'] or 0)} for r in rows]
 
 
 def get_on_hold_weight():
