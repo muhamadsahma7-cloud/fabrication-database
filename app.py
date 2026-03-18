@@ -1575,12 +1575,13 @@ def page_summary():
         else:
             st.info('No production data yet.')
 
-    # ── Cumulative S-Curve ─────────────────────────────────────────────────────
+    # ── Cumulative S-Curve (Welding) ───────────────────────────────────────────
     with col_r:
-        st.subheader('Cumulative S-Curve')
+        st.subheader('Cumulative S-Curve (Welding)')
         if daily_prod:
             sc_df = pd.DataFrame(daily_prod)
             sc_df['entry_date'] = pd.to_datetime(sc_df['entry_date'])
+            sc_df = sc_df[sc_df['stage'] == 'WELDING']
             sc_total = sc_df.groupby('entry_date')['kg'].sum().reset_index()
             sc_total = sc_total.sort_values('entry_date')
             sc_total['cumulative_kg'] = sc_total['kg'].cumsum()
