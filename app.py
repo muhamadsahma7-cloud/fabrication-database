@@ -1133,7 +1133,7 @@ def page_manage():
         tpl_wb = _xl.Workbook()
         tpl_ws = tpl_wb.active
         tpl_ws.title = 'Master Database'
-        tpl_headers = ['Work Order', 'Assembly Mark', 'Sub Assembly', 'Part Mark', 'No.',
+        tpl_headers = ['Priority', 'Work Order', 'Assembly Mark', 'Sub Assembly', 'Part Mark', 'No.',
                        'Name', 'Profile', 'kg/m', 'Length (mm)', 'Weight (kg)',
                        'Profile 2', 'Grade', 'Remark',
                        'FIT UP (kg)', 'FIT UP Date',
@@ -1206,6 +1206,7 @@ def page_manage():
 
             # Column definitions: (header, width, number_format)
             exp_cols = [
+                ('Priority',                    9, '0'),
                 ('Work Order',                 12, None),
                 ('Assembly Mark',              15, None),
                 ('Sub Assembly',               18, None),

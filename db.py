@@ -183,6 +183,7 @@ def init():
         "ALTER TABLE progress   ADD COLUMN IF NOT EXISTS delivery_order_no TEXT DEFAULT ''",
         "ALTER TABLE parts      ADD COLUMN IF NOT EXISTS remark TEXT DEFAULT ''",
         "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS work_order TEXT DEFAULT '001'",
+        "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0",
     ]:
         db.execute(col_sql)
     db.commit()
@@ -592,6 +593,7 @@ def import_excel(file_source):
         parts_rows     = []        # list of 12-tuples for bulk INSERT
         asm_weights    = {}        # asm -> total kg
         asm_work_orders = {}       # asm -> work_order
+        asm_priorities  = {}       # asm -> priority
         progress_map   = {}        # (asm, sub, stage) -> (total_kg, date_str, do_no)
 
         for row in rows[header_row + 1:]:
@@ -611,11 +613,13 @@ def import_excel(file_source):
             grade  = str(_get(row, 'Grade', default='') or '').strip()
             remark = str(_get(row, 'Remark', default='') or '').strip()
             wo     = str(_get(row, 'Work Order', 'Work_Order', 'WO', default='001') or '001').strip()
+            prio   = _int(_get(row, 'Priority', default=0))
 
             if asm not in asm_set:
                 asm_order.append(asm)
                 asm_set.add(asm)
                 asm_work_orders[asm] = wo
+                asm_priorities[asm]  = prio
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
             parts_rows.append((asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark))
 
@@ -647,10 +651,10 @@ def import_excel(file_source):
         # 1. Assemblies — all in one statement; include final weights and work_order
         psycopg2.extras.execute_values(
             cur,
-            "INSERT INTO assemblies (assembly_mark, total_weight_kg, work_order) VALUES %s "
+            "INSERT INTO assemblies (assembly_mark, total_weight_kg, work_order, priority) VALUES %s "
             "ON CONFLICT(assembly_mark) DO UPDATE SET total_weight_kg = EXCLUDED.total_weight_kg, "
-            "work_order = EXCLUDED.work_order",
-            [(asm, asm_weights[asm], asm_work_orders.get(asm, '001')) for asm in asm_order],
+            "work_order = EXCLUDED.work_order, priority = EXCLUDED.priority",
+            [(asm, asm_weights[asm], asm_work_orders.get(asm, '001'), asm_priorities.get(asm, 0)) for asm in asm_order],
         )
         raw.commit()
 
@@ -1156,6 +1160,7 @@ def get_master_export():
     db = _conn()
     rows = db.execute("""
         SELECT
+            a.priority             AS "Priority",
             a.work_order           AS "Work Order",
             p.assembly_mark        AS "Assembly Mark",
             p.sub_assembly_mark    AS "Sub Assembly",
