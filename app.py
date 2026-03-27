@@ -862,15 +862,78 @@ def page_progress():
         if prio_df.empty:
             st.info('No assemblies with priority set.')
         else:
-            prio_df = prio_df.sort_values('Priority')
-            prio_cols = [
-                'Priority', 'Work Order', 'Assembly', 'Sub-Assembly', 'Total (kg)',
-                'Fit Up (kg)', 'Fit Up %',
-                'Welding (kg)', 'Welding %',
-                'Blast/Paint (kg)', 'Blast/Paint %',
-                'Send to Site (kg)', 'Send to Site %',
-            ]
-            st.dataframe(prio_df[prio_cols], use_container_width=True, hide_index=True)
+            # Aggregate to assembly level for tracking
+            prio_asm = prio_df.groupby(
+                ['Priority', 'Work Order', 'Assembly'], as_index=False
+            ).agg({
+                'Total (kg)':        'sum',
+                'Fit Up (kg)':       'sum',
+                'Welding (kg)':      'sum',
+                'Blast/Paint (kg)':  'sum',
+                'Send to Site (kg)': 'sum',
+            }).sort_values(['Priority', 'Assembly'])
+
+            DONE_THRESHOLD = 0.95   # 95% = stage considered complete
+
+            def _pct(done, total):
+                return min(done / total, 1.0) if total else 0.0
+
+            def _current_stage(row):
+                total = row['Total (kg)']
+                for label, col in [
+                    ('FIT UP',          'Fit Up (kg)'),
+                    ('WELDING',         'Welding (kg)'),
+                    ('BLAST/PAINT',     'Blast/Paint (kg)'),
+                    ('SEND TO SITE',    'Send to Site (kg)'),
+                ]:
+                    if _pct(row[col], total) < DONE_THRESHOLD:
+                        return label
+                return 'COMPLETE'
+
+            prio_asm['Current Stage'] = prio_asm.apply(_current_stage, axis=1)
+            for src, pct_col in [
+                ('Fit Up (kg)',      'FU%'),
+                ('Welding (kg)',     'WD%'),
+                ('Blast/Paint (kg)','BP%'),
+                ('Send to Site (kg)','STS%'),
+            ]:
+                prio_asm[pct_col] = prio_asm.apply(
+                    lambda r, c=src: _pct(r[c], r['Total (kg)']), axis=1
+                )
+
+            # Summary metrics — count of assemblies per bottleneck stage
+            stage_order = ['FIT UP', 'WELDING', 'BLAST/PAINT', 'SEND TO SITE', 'COMPLETE']
+            stage_labels = ['Fit Up', 'Welding', 'Blast/Paint', 'Send to Site', 'Complete']
+            counts = prio_asm['Current Stage'].value_counts()
+            m_cols = st.columns(5)
+            for i, (stg, lbl) in enumerate(zip(stage_order, stage_labels)):
+                m_cols[i].metric(lbl, int(counts.get(stg, 0)))
+
+            st.divider()
+
+            # Filter by stage
+            filter_stage = st.selectbox(
+                'Filter by current stage',
+                ['All'] + stage_order,
+                key='prio_stage_filter',
+            )
+            view = prio_asm if filter_stage == 'All' else prio_asm[prio_asm['Current Stage'] == filter_stage]
+
+            st.dataframe(
+                view[['Priority', 'Work Order', 'Assembly', 'Current Stage',
+                       'Total (kg)', 'FU%', 'WD%', 'BP%', 'STS%']],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    'Priority':      st.column_config.NumberColumn('Priority', width='small'),
+                    'Current Stage': st.column_config.TextColumn('Current Stage', width='medium'),
+                    'Total (kg)':    st.column_config.NumberColumn('Total (kg)', format='%.1f'),
+                    'FU%':           st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=1, format='%.0%%'),
+                    'WD%':           st.column_config.ProgressColumn('Welding',      min_value=0, max_value=1, format='%.0%%'),
+                    'BP%':           st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=1, format='%.0%%'),
+                    'STS%':          st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=1, format='%.0%%'),
+                },
+            )
 
     # ── Download Excel ─────────────────────────────────────────────────────────
     import openpyxl as _xl
