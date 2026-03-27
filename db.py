@@ -969,7 +969,9 @@ def get_cumulative_by_sub(work_order=None):
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
             COALESCE(SUM(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.weight_kg END), 0) AS blasting,
-            COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite
+            COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite,
+            MAX(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.delivery_order_no END) AS blasting_do,
+            MAX(CASE WHEN p.stage='SEND TO SITE'        THEN p.delivery_order_no END) AS sendsite_do
         FROM (
             SELECT pt.assembly_mark, pt.sub_assembly_mark,
                    a2.work_order, a2.priority, SUM(pt.total_weight_kg) AS sub_weight
@@ -995,7 +997,9 @@ def get_cumulative_by_sub(work_order=None):
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
             COALESCE(SUM(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.weight_kg END), 0) AS blasting,
-            COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite
+            COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite,
+            MAX(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.delivery_order_no END) AS blasting_do,
+            MAX(CASE WHEN p.stage='SEND TO SITE'        THEN p.delivery_order_no END) AS sendsite_do
         FROM assemblies a
         LEFT JOIN progress p ON a.assembly_mark = p.assembly_mark
         WHERE a.assembly_mark NOT IN (

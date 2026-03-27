@@ -836,6 +836,8 @@ def page_progress():
         'welding':          'Welding (kg)',
         'blasting':         'Blast/Paint (kg)',
         'sendsite':         'Send to Site (kg)',
+        'blasting_do':      'Blast D.O.',
+        'sendsite_do':      'Send to Site D.O.',
     })
 
     def pct_str(row, col):
@@ -890,17 +892,19 @@ def page_progress():
                 )
 
             col_config = {
-                'Assembly':      st.column_config.TextColumn('Assembly',      width='medium'),
-                'Sub-Assembly':  st.column_config.TextColumn('Sub-Assembly',  width='medium'),
-                'Current Stage': st.column_config.TextColumn('Current Stage', width='medium'),
-                'Total (kg)':    st.column_config.NumberColumn('Total (kg)',  format='%.1f'),
-                'FU%':           st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=100, format='%.1f%%'),
-                'WD%':           st.column_config.ProgressColumn('Welding',      min_value=0, max_value=100, format='%.1f%%'),
-                'BP%':           st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=100, format='%.1f%%'),
-                'STS%':          st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=100, format='%.1f%%'),
+                'Assembly':          st.column_config.TextColumn('Assembly',      width='medium'),
+                'Sub-Assembly':      st.column_config.TextColumn('Sub-Assembly',  width='medium'),
+                'Current Stage':     st.column_config.TextColumn('Current Stage', width='medium'),
+                'Total (kg)':        st.column_config.NumberColumn('Total (kg)',  format='%.1f'),
+                'FU%':               st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=100, format='%.1f%%'),
+                'WD%':               st.column_config.ProgressColumn('Welding',      min_value=0, max_value=100, format='%.1f%%'),
+                'BP%':               st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=100, format='%.1f%%'),
+                'Blast D.O.':        st.column_config.TextColumn('Blast D.O.',    width='small'),
+                'STS%':              st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=100, format='%.1f%%'),
+                'Send to Site D.O.': st.column_config.TextColumn('STS D.O.',      width='small'),
             }
             view_cols = ['Assembly', 'Sub-Assembly', 'Current Stage',
-                         'Total (kg)', 'FU%', 'WD%', 'BP%', 'STS%']
+                         'Total (kg)', 'FU%', 'WD%', 'BP%', 'Blast D.O.', 'STS%', 'Send to Site D.O.']
 
             import openpyxl as _pxl
             from openpyxl.styles import (Font as _PFont, PatternFill as _PFill,
@@ -918,14 +922,16 @@ def page_progress():
                 _thin     = _PSide(style='thin', color='CCCCCC')
                 _border   = _PBorder(left=_thin, right=_thin, top=_thin, bottom=_thin)
                 _xl_cols  = [
-                    ('Assembly',      18, None),
-                    ('Sub-Assembly',  22, None),
-                    ('Current Stage', 16, None),
-                    ('Total (kg)',    14, '#,##0.00'),
-                    ('Fit Up %',      12, '0.0%'),
-                    ('Welding %',     12, '0.0%'),
-                    ('Blast/Paint %', 14, '0.0%'),
-                    ('Send to Site %',16, '0.0%'),
+                    ('Assembly',        18, None),
+                    ('Sub-Assembly',    22, None),
+                    ('Current Stage',   16, None),
+                    ('Total (kg)',      14, '#,##0.00'),
+                    ('Fit Up %',        12, '0.0%'),
+                    ('Welding %',       12, '0.0%'),
+                    ('Blast/Paint %',   14, '0.0%'),
+                    ('Blast D.O.',      14, None),
+                    ('Send to Site %',  16, '0.0%'),
+                    ('Send to Site D.O.',16, None),
                 ]
                 for ci, (hdr, width, _) in enumerate(_xl_cols, 1):
                     cell = _ws.cell(row=1, column=ci, value=hdr)
@@ -938,7 +944,8 @@ def page_progress():
                         row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
                         row['Total (kg)'],
                         row['FU%'] / 100, row['WD%'] / 100,
-                        row['BP%'] / 100, row['STS%'] / 100,
+                        row['BP%'] / 100, row.get('Blast D.O.', '') or '',
+                        row['STS%'] / 100, row.get('Send to Site D.O.', '') or '',
                     ]
                     _row_fill = _PFill('solid', fgColor='F0F4FA' if ri % 2 == 0 else 'FFFFFF')
                     for ci, (val, (_, _, num_fmt)) in enumerate(zip(vals, _xl_cols), 1):
