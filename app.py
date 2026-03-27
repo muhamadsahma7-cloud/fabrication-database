@@ -902,6 +902,57 @@ def page_progress():
             view_cols = ['Assembly', 'Sub-Assembly', 'Current Stage',
                          'Total (kg)', 'FU%', 'WD%', 'BP%', 'STS%']
 
+            import openpyxl as _pxl
+            from openpyxl.styles import (Font as _PFont, PatternFill as _PFill,
+                                         Alignment as _PAlign, Border as _PBorder, Side as _PSide)
+
+            def _build_priority_excel(grp_df, prio_num):
+                _wb = _pxl.Workbook()
+                _ws = _wb.active
+                _ws.title = f'Priority {int(prio_num)}'
+                _hdr_fill = _PFill('solid', fgColor='1E3A5F')
+                _hdr_font = _PFont(bold=True, color='FFFFFF', size=11)
+                _hdr_aln  = _PAlign(horizontal='center', vertical='center')
+                _num_aln  = _PAlign(horizontal='right',  vertical='center')
+                _txt_aln  = _PAlign(horizontal='left',   vertical='center')
+                _thin     = _PSide(style='thin', color='CCCCCC')
+                _border   = _PBorder(left=_thin, right=_thin, top=_thin, bottom=_thin)
+                _xl_cols  = [
+                    ('Assembly',      18, None),
+                    ('Sub-Assembly',  22, None),
+                    ('Current Stage', 16, None),
+                    ('Total (kg)',    14, '#,##0.00'),
+                    ('Fit Up %',      12, '0.0%'),
+                    ('Welding %',     12, '0.0%'),
+                    ('Blast/Paint %', 14, '0.0%'),
+                    ('Send to Site %',16, '0.0%'),
+                ]
+                for ci, (hdr, width, _) in enumerate(_xl_cols, 1):
+                    cell = _ws.cell(row=1, column=ci, value=hdr)
+                    cell.fill = _hdr_fill; cell.font = _hdr_font
+                    cell.alignment = _hdr_aln; cell.border = _border
+                    _ws.column_dimensions[cell.column_letter].width = width
+                _ws.row_dimensions[1].height = 20
+                for ri, (_, row) in enumerate(grp_df.iterrows(), 2):
+                    vals = [
+                        row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
+                        row['Total (kg)'],
+                        row['FU%'] / 100, row['WD%'] / 100,
+                        row['BP%'] / 100, row['STS%'] / 100,
+                    ]
+                    _row_fill = _PFill('solid', fgColor='F0F4FA' if ri % 2 == 0 else 'FFFFFF')
+                    for ci, (val, (_, _, num_fmt)) in enumerate(zip(vals, _xl_cols), 1):
+                        cell = _ws.cell(row=ri, column=ci, value=val)
+                        cell.border = _border; cell.fill = _row_fill
+                        if num_fmt:
+                            cell.number_format = num_fmt; cell.alignment = _num_aln
+                        else:
+                            cell.alignment = _txt_aln
+                _ws.freeze_panes = 'A2'
+                _ws.auto_filter.ref = _ws.dimensions
+                _buf = BytesIO(); _wb.save(_buf)
+                return _buf.getvalue()
+
             # One expander per priority number — Priority 1 expanded by default
             for prio_num in sorted(prio_df['Priority'].unique()):
                 grp = prio_df[prio_df['Priority'] == prio_num].sort_values(['Assembly', 'Sub-Assembly'])
@@ -922,6 +973,14 @@ def page_progress():
                         use_container_width=True,
                         hide_index=True,
                         column_config=col_config,
+                    )
+                    st.download_button(
+                        f'📥 Download Priority {int(prio_num)} Excel',
+                        _build_priority_excel(grp, prio_num),
+                        f'priority_{int(prio_num)}_{date.today()}.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        use_container_width=True,
+                        key=f'dl_prio_{int(prio_num)}',
                     )
 
     # ── Download Excel ─────────────────────────────────────────────────────────
