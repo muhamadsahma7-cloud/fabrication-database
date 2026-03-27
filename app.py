@@ -898,7 +898,7 @@ def page_progress():
                 ('Send to Site (kg)','STS%'),
             ]:
                 prio_asm[pct_col] = prio_asm.apply(
-                    lambda r, c=src: _pct(r[c], r['Total (kg)']), axis=1
+                    lambda r, c=src: round(min(r[c] / r['Total (kg)'] * 100, 100.0) if r['Total (kg)'] else 0.0, 1), axis=1
                 )
 
             # Summary metrics — count of assemblies per bottleneck stage
@@ -928,10 +928,10 @@ def page_progress():
                     'Priority':      st.column_config.NumberColumn('Priority', width='small'),
                     'Current Stage': st.column_config.TextColumn('Current Stage', width='medium'),
                     'Total (kg)':    st.column_config.NumberColumn('Total (kg)', format='%.1f'),
-                    'FU%':           st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=1, format='%.0%%'),
-                    'WD%':           st.column_config.ProgressColumn('Welding',      min_value=0, max_value=1, format='%.0%%'),
-                    'BP%':           st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=1, format='%.0%%'),
-                    'STS%':          st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=1, format='%.0%%'),
+                    'FU%':           st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=100, format='%.1f%%'),
+                    'WD%':           st.column_config.ProgressColumn('Welding',      min_value=0, max_value=100, format='%.1f%%'),
+                    'BP%':           st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=100, format='%.1f%%'),
+                    'STS%':          st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=100, format='%.1f%%'),
                 },
             )
 
