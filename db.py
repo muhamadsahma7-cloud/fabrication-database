@@ -964,6 +964,7 @@ def get_cumulative_by_sub(work_order=None):
             sp.assembly_mark,
             sp.sub_assembly_mark,
             sp.work_order,
+            sp.priority,
             sp.sub_weight AS total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
@@ -971,17 +972,17 @@ def get_cumulative_by_sub(work_order=None):
             COALESCE(SUM(CASE WHEN p.stage='SEND TO SITE'        THEN p.weight_kg END), 0) AS sendsite
         FROM (
             SELECT pt.assembly_mark, pt.sub_assembly_mark,
-                   a2.work_order, SUM(pt.total_weight_kg) AS sub_weight
+                   a2.work_order, a2.priority, SUM(pt.total_weight_kg) AS sub_weight
             FROM parts pt
             JOIN assemblies a2 ON pt.assembly_mark = a2.assembly_mark
             WHERE pt.sub_assembly_mark != ''
             {wo_filter1}
-            GROUP BY pt.assembly_mark, pt.sub_assembly_mark, a2.work_order
+            GROUP BY pt.assembly_mark, pt.sub_assembly_mark, a2.work_order, a2.priority
         ) sp
         LEFT JOIN progress p
             ON sp.assembly_mark = p.assembly_mark
            AND sp.sub_assembly_mark = p.sub_assembly_mark
-        GROUP BY sp.assembly_mark, sp.sub_assembly_mark, sp.work_order, sp.sub_weight
+        GROUP BY sp.assembly_mark, sp.sub_assembly_mark, sp.work_order, sp.priority, sp.sub_weight
 
         UNION ALL
 
@@ -989,6 +990,7 @@ def get_cumulative_by_sub(work_order=None):
             a.assembly_mark,
             '' AS sub_assembly_mark,
             a.work_order,
+            a.priority,
             a.total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
@@ -1000,7 +1002,7 @@ def get_cumulative_by_sub(work_order=None):
             SELECT DISTINCT assembly_mark FROM parts WHERE sub_assembly_mark != ''
         )
         {wo_filter2}
-        GROUP BY a.assembly_mark, a.work_order, a.total_weight_kg
+        GROUP BY a.assembly_mark, a.work_order, a.priority, a.total_weight_kg
         ORDER BY 1, 2
     """, params).fetchall()
     db.close()

@@ -824,10 +824,13 @@ def page_progress():
         st.info('No progress data yet.')
         return
 
+    tab_all, tab_priority = st.tabs(['📋 All', '🔴 Priority'])
+
     df = pd.DataFrame(rows).rename(columns={
         'work_order':       'Work Order',
         'assembly_mark':    'Assembly',
         'sub_assembly_mark':'Sub-Assembly',
+        'priority':         'Priority',
         'total_weight_kg':  'Total (kg)',
         'fitup':            'Fit Up (kg)',
         'welding':          'Welding (kg)',
@@ -844,14 +847,30 @@ def page_progress():
     df['Blast/Paint %']  = df.apply(lambda r: pct_str(r, 'Blast/Paint (kg)'),  axis=1)
     df['Send to Site %'] = df.apply(lambda r: pct_str(r, 'Send to Site (kg)'), axis=1)
 
-    display_cols = [
-        'Work Order', 'Assembly', 'Sub-Assembly', 'Total (kg)',
-        'Fit Up (kg)', 'Fit Up %',
-        'Welding (kg)', 'Welding %',
-        'Blast/Paint (kg)', 'Blast/Paint %',
-        'Send to Site (kg)', 'Send to Site %',
-    ]
-    st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+    with tab_all:
+        display_cols = [
+            'Work Order', 'Assembly', 'Sub-Assembly', 'Total (kg)',
+            'Fit Up (kg)', 'Fit Up %',
+            'Welding (kg)', 'Welding %',
+            'Blast/Paint (kg)', 'Blast/Paint %',
+            'Send to Site (kg)', 'Send to Site %',
+        ]
+        st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+
+    with tab_priority:
+        prio_df = df[df['Priority'] > 0].copy()
+        if prio_df.empty:
+            st.info('No assemblies with priority set.')
+        else:
+            prio_df = prio_df.sort_values('Priority')
+            prio_cols = [
+                'Priority', 'Work Order', 'Assembly', 'Sub-Assembly', 'Total (kg)',
+                'Fit Up (kg)', 'Fit Up %',
+                'Welding (kg)', 'Welding %',
+                'Blast/Paint (kg)', 'Blast/Paint %',
+                'Send to Site (kg)', 'Send to Site %',
+            ]
+            st.dataframe(prio_df[prio_cols], use_container_width=True, hide_index=True)
 
     # ── Download Excel ─────────────────────────────────────────────────────────
     import openpyxl as _xl
