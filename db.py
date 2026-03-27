@@ -613,7 +613,8 @@ def import_excel(file_source):
             grade  = str(_get(row, 'Grade', default='') or '').strip()
             remark = str(_get(row, 'Remark', default='') or '').strip()
             wo     = str(_get(row, 'Work Order', 'Work_Order', 'WO', default='001') or '001').strip()
-            prio   = _int(_get(row, 'Priority', default=0))
+            _prio_raw = _get(row, 'Priority', default=None)
+            prio = int(float(_prio_raw)) if _prio_raw is not None and str(_prio_raw).strip() != '' else None
 
             if asm not in asm_set:
                 asm_order.append(asm)
@@ -654,7 +655,7 @@ def import_excel(file_source):
             "INSERT INTO assemblies (assembly_mark, total_weight_kg, work_order, priority) VALUES %s "
             "ON CONFLICT(assembly_mark) DO UPDATE SET total_weight_kg = EXCLUDED.total_weight_kg, "
             "work_order = EXCLUDED.work_order, priority = EXCLUDED.priority",
-            [(asm, asm_weights[asm], asm_work_orders.get(asm, '001'), asm_priorities.get(asm, 0)) for asm in asm_order],
+            [(asm, asm_weights[asm], asm_work_orders.get(asm, '001'), asm_priorities.get(asm, None)) for asm in asm_order],
         )
         raw.commit()
 
