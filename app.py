@@ -862,78 +862,67 @@ def page_progress():
         if prio_df.empty:
             st.info('No assemblies with priority set.')
         else:
-            # Aggregate to assembly level for tracking
-            prio_asm = prio_df.groupby(
-                ['Priority', 'Work Order', 'Assembly'], as_index=False
-            ).agg({
-                'Total (kg)':        'sum',
-                'Fit Up (kg)':       'sum',
-                'Welding (kg)':      'sum',
-                'Blast/Paint (kg)':  'sum',
-                'Send to Site (kg)': 'sum',
-            }).sort_values(['Priority', 'Assembly'])
+            DONE_THRESHOLD = 0.95
 
-            DONE_THRESHOLD = 0.95   # 95% = stage considered complete
-
-            def _pct(done, total):
-                return min(done / total, 1.0) if total else 0.0
+            def _pct100(done, total):
+                return round(min(done / total * 100, 100.0) if total else 0.0, 1)
 
             def _current_stage(row):
-                total = row['Total (kg)']
                 for label, col in [
-                    ('FIT UP',          'Fit Up (kg)'),
-                    ('WELDING',         'Welding (kg)'),
-                    ('BLAST/PAINT',     'Blast/Paint (kg)'),
-                    ('SEND TO SITE',    'Send to Site (kg)'),
+                    ('FIT UP',       'Fit Up (kg)'),
+                    ('WELDING',      'Welding (kg)'),
+                    ('BLAST/PAINT',  'Blast/Paint (kg)'),
+                    ('SEND TO SITE', 'Send to Site (kg)'),
                 ]:
-                    if _pct(row[col], total) < DONE_THRESHOLD:
+                    if _pct100(row[col], row['Total (kg)']) < DONE_THRESHOLD * 100:
                         return label
                 return 'COMPLETE'
 
-            prio_asm['Current Stage'] = prio_asm.apply(_current_stage, axis=1)
+            prio_df['Current Stage'] = prio_df.apply(_current_stage, axis=1)
             for src, pct_col in [
-                ('Fit Up (kg)',      'FU%'),
-                ('Welding (kg)',     'WD%'),
-                ('Blast/Paint (kg)','BP%'),
+                ('Fit Up (kg)',       'FU%'),
+                ('Welding (kg)',      'WD%'),
+                ('Blast/Paint (kg)', 'BP%'),
                 ('Send to Site (kg)','STS%'),
             ]:
-                prio_asm[pct_col] = prio_asm.apply(
-                    lambda r, c=src: round(min(r[c] / r['Total (kg)'] * 100, 100.0) if r['Total (kg)'] else 0.0, 1), axis=1
+                prio_df[pct_col] = prio_df.apply(
+                    lambda r, c=src: _pct100(r[c], r['Total (kg)']), axis=1
                 )
 
-            # Summary metrics — count of assemblies per bottleneck stage
-            stage_order = ['FIT UP', 'WELDING', 'BLAST/PAINT', 'SEND TO SITE', 'COMPLETE']
-            stage_labels = ['Fit Up', 'Welding', 'Blast/Paint', 'Send to Site', 'Complete']
-            counts = prio_asm['Current Stage'].value_counts()
-            m_cols = st.columns(5)
-            for i, (stg, lbl) in enumerate(zip(stage_order, stage_labels)):
-                m_cols[i].metric(lbl, int(counts.get(stg, 0)))
+            col_config = {
+                'Assembly':      st.column_config.TextColumn('Assembly',      width='medium'),
+                'Sub-Assembly':  st.column_config.TextColumn('Sub-Assembly',  width='medium'),
+                'Current Stage': st.column_config.TextColumn('Current Stage', width='medium'),
+                'Total (kg)':    st.column_config.NumberColumn('Total (kg)',  format='%.1f'),
+                'FU%':           st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=100, format='%.1f%%'),
+                'WD%':           st.column_config.ProgressColumn('Welding',      min_value=0, max_value=100, format='%.1f%%'),
+                'BP%':           st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=100, format='%.1f%%'),
+                'STS%':          st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=100, format='%.1f%%'),
+            }
+            view_cols = ['Assembly', 'Sub-Assembly', 'Current Stage',
+                         'Total (kg)', 'FU%', 'WD%', 'BP%', 'STS%']
 
-            st.divider()
-
-            # Filter by stage
-            filter_stage = st.selectbox(
-                'Filter by current stage',
-                ['All'] + stage_order,
-                key='prio_stage_filter',
-            )
-            view = prio_asm if filter_stage == 'All' else prio_asm[prio_asm['Current Stage'] == filter_stage]
-
-            st.dataframe(
-                view[['Priority', 'Work Order', 'Assembly', 'Current Stage',
-                       'Total (kg)', 'FU%', 'WD%', 'BP%', 'STS%']],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    'Priority':      st.column_config.NumberColumn('Priority', width='small'),
-                    'Current Stage': st.column_config.TextColumn('Current Stage', width='medium'),
-                    'Total (kg)':    st.column_config.NumberColumn('Total (kg)', format='%.1f'),
-                    'FU%':           st.column_config.ProgressColumn('Fit Up',       min_value=0, max_value=100, format='%.1f%%'),
-                    'WD%':           st.column_config.ProgressColumn('Welding',      min_value=0, max_value=100, format='%.1f%%'),
-                    'BP%':           st.column_config.ProgressColumn('Blast/Paint',  min_value=0, max_value=100, format='%.1f%%'),
-                    'STS%':          st.column_config.ProgressColumn('Send to Site', min_value=0, max_value=100, format='%.1f%%'),
-                },
-            )
+            # One expander per priority number — Priority 1 expanded by default
+            for prio_num in sorted(prio_df['Priority'].unique()):
+                grp = prio_df[prio_df['Priority'] == prio_num].sort_values(['Assembly', 'Sub-Assembly'])
+                counts = grp['Current Stage'].value_counts()
+                not_done = len(grp[grp['Current Stage'] != 'COMPLETE'])
+                label = f'Priority {int(prio_num)} — {len(grp)} sub-assemblies  |  {not_done} pending'
+                with st.expander(label, expanded=(prio_num == prio_df['Priority'].min())):
+                    # Mini metrics for this priority group
+                    m_cols = st.columns(5)
+                    for i, (stg, lbl) in enumerate([
+                        ('FIT UP','Fit Up'), ('WELDING','Welding'),
+                        ('BLAST/PAINT','Blast/Paint'), ('SEND TO SITE','Send to Site'),
+                        ('COMPLETE','Complete'),
+                    ]):
+                        m_cols[i].metric(lbl, int(counts.get(stg, 0)))
+                    st.dataframe(
+                        grp[view_cols],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=col_config,
+                    )
 
     # ── Download Excel ─────────────────────────────────────────────────────────
     import openpyxl as _xl
