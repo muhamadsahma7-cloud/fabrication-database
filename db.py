@@ -184,6 +184,7 @@ def init():
         "ALTER TABLE parts      ADD COLUMN IF NOT EXISTS remark TEXT DEFAULT ''",
         "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS work_order TEXT DEFAULT '001'",
         "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0",
+        "ALTER TABLE parts      ADD COLUMN IF NOT EXISTS priority INTEGER",
     ]:
         db.execute(col_sql)
     db.commit()
@@ -622,7 +623,7 @@ def import_excel(file_source):
                 asm_work_orders[asm] = wo
                 asm_priorities[asm]  = prio
             asm_weights[asm] = asm_weights.get(asm, 0) + tw
-            parts_rows.append((asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark))
+            parts_rows.append((asm, sub, pm, no, name, prof, kgm, lmm, tw, prof2, grade, remark, prio))
 
             for stage, kg_col, date_col, do_col in stage_cols:
                 kg = _float(_get(row, kg_col, default=0))
@@ -666,7 +667,7 @@ def import_excel(file_source):
                 cur,
                 "INSERT INTO parts "
                 "(assembly_mark, sub_assembly_mark, part_mark, no, name, "
-                "profile, kg_per_m, length_mm, total_weight_kg, profile2, grade, remark) "
+                "profile, kg_per_m, length_mm, total_weight_kg, profile2, grade, remark, priority) "
                 "VALUES %s",
                 parts_rows[i : i + CHUNK],
             )
@@ -975,12 +976,12 @@ def get_cumulative_by_sub(work_order=None):
             MAX(CASE WHEN p.stage='SEND TO SITE'        THEN p.delivery_order_no END) AS sendsite_do
         FROM (
             SELECT pt.assembly_mark, pt.sub_assembly_mark,
-                   a2.work_order, a2.priority, SUM(pt.total_weight_kg) AS sub_weight
+                   a2.work_order, MAX(pt.priority) AS priority, SUM(pt.total_weight_kg) AS sub_weight
             FROM parts pt
             JOIN assemblies a2 ON pt.assembly_mark = a2.assembly_mark
             WHERE pt.sub_assembly_mark != ''
             {wo_filter1}
-            GROUP BY pt.assembly_mark, pt.sub_assembly_mark, a2.work_order, a2.priority
+            GROUP BY pt.assembly_mark, pt.sub_assembly_mark, a2.work_order
         ) sp
         LEFT JOIN progress p
             ON sp.assembly_mark = p.assembly_mark
@@ -993,7 +994,7 @@ def get_cumulative_by_sub(work_order=None):
             a.assembly_mark,
             '' AS sub_assembly_mark,
             a.work_order,
-            a.priority,
+            MAX(pt2.priority) AS priority,
             a.total_weight_kg,
             COALESCE(SUM(CASE WHEN p.stage='FIT UP'              THEN p.weight_kg END), 0) AS fitup,
             COALESCE(SUM(CASE WHEN p.stage='WELDING'             THEN p.weight_kg END), 0) AS welding,
@@ -1002,12 +1003,13 @@ def get_cumulative_by_sub(work_order=None):
             MAX(CASE WHEN p.stage='BLASTING & PAINTING' THEN p.delivery_order_no END) AS blasting_do,
             MAX(CASE WHEN p.stage='SEND TO SITE'        THEN p.delivery_order_no END) AS sendsite_do
         FROM assemblies a
+        LEFT JOIN parts pt2 ON a.assembly_mark = pt2.assembly_mark
         LEFT JOIN progress p ON a.assembly_mark = p.assembly_mark
         WHERE a.assembly_mark NOT IN (
             SELECT DISTINCT assembly_mark FROM parts WHERE sub_assembly_mark != ''
         )
         {wo_filter2}
-        GROUP BY a.assembly_mark, a.work_order, a.priority, a.total_weight_kg
+        GROUP BY a.assembly_mark, a.work_order, a.total_weight_kg
         ORDER BY 1, 2
     """, params).fetchall()
     db.close()
@@ -1167,7 +1169,7 @@ def get_master_export():
     db = _conn()
     rows = db.execute("""
         SELECT
-            a.priority             AS "Priority",
+            p.priority             AS "Priority",
             a.work_order           AS "Work Order",
             p.assembly_mark        AS "Assembly Mark",
             p.sub_assembly_mark    AS "Sub Assembly",
