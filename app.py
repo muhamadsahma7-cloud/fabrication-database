@@ -962,7 +962,8 @@ def page_progress():
 
             def _build_summary_excel(df_all):
                 _wb = _pxl.Workbook()
-                _wb.remove(_wb.active)  # remove default sheet
+                _ws = _wb.active
+                _ws.title = 'Priority Summary'
                 _hdr_fill = _PFill('solid', fgColor='1E3A5F')
                 _hdr_font = _PFont(bold=True, color='FFFFFF', size=11)
                 _hdr_aln  = _PAlign(horizontal='center', vertical='center')
@@ -983,33 +984,31 @@ def page_progress():
                     ('Send to Site %',   16, '0.0%'),
                     ('Send to Site D.O.',16, None),
                 ]
-                for pn in sorted(df_all['Priority'].unique()):
-                    grp = df_all[df_all['Priority'] == pn].sort_values(['Assembly', 'Sub-Assembly'])
-                    _ws = _wb.create_sheet(title=f'Priority {int(pn)}')
-                    for ci, (hdr, width, _) in enumerate(_xl_cols, 1):
-                        cell = _ws.cell(row=1, column=ci, value=hdr)
-                        cell.fill = _hdr_fill; cell.font = _hdr_font
-                        cell.alignment = _hdr_aln; cell.border = _border
-                        _ws.column_dimensions[cell.column_letter].width = width
-                    _ws.row_dimensions[1].height = 20
-                    for ri, (_, row) in enumerate(grp.iterrows(), 2):
-                        vals = [
-                            int(pn), row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
-                            row['Total (kg)'],
-                            row['FU%'] / 100, row['WD%'] / 100,
-                            row['BP%'] / 100, row.get('Blast D.O.', '') or '',
-                            row['STS%'] / 100, row.get('Send to Site D.O.', '') or '',
-                        ]
-                        _row_fill = _PFill('solid', fgColor='F0F4FA' if ri % 2 == 0 else 'FFFFFF')
-                        for ci, (val, (_, _, num_fmt)) in enumerate(zip(vals, _xl_cols), 1):
-                            cell = _ws.cell(row=ri, column=ci, value=val)
-                            cell.border = _border; cell.fill = _row_fill
-                            if num_fmt:
-                                cell.number_format = num_fmt; cell.alignment = _num_aln
-                            else:
-                                cell.alignment = _txt_aln
-                    _ws.freeze_panes = 'A2'
-                    _ws.auto_filter.ref = _ws.dimensions
+                for ci, (hdr, width, _) in enumerate(_xl_cols, 1):
+                    cell = _ws.cell(row=1, column=ci, value=hdr)
+                    cell.fill = _hdr_fill; cell.font = _hdr_font
+                    cell.alignment = _hdr_aln; cell.border = _border
+                    _ws.column_dimensions[cell.column_letter].width = width
+                _ws.row_dimensions[1].height = 20
+                sorted_df = df_all.sort_values(['Priority', 'Assembly', 'Sub-Assembly'])
+                for ri, (_, row) in enumerate(sorted_df.iterrows(), 2):
+                    vals = [
+                        int(row['Priority']), row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
+                        row['Total (kg)'],
+                        row['FU%'] / 100, row['WD%'] / 100,
+                        row['BP%'] / 100, row.get('Blast D.O.', '') or '',
+                        row['STS%'] / 100, row.get('Send to Site D.O.', '') or '',
+                    ]
+                    _row_fill = _PFill('solid', fgColor='F0F4FA' if ri % 2 == 0 else 'FFFFFF')
+                    for ci, (val, (_, _, num_fmt)) in enumerate(zip(vals, _xl_cols), 1):
+                        cell = _ws.cell(row=ri, column=ci, value=val)
+                        cell.border = _border; cell.fill = _row_fill
+                        if num_fmt:
+                            cell.number_format = num_fmt; cell.alignment = _num_aln
+                        else:
+                            cell.alignment = _txt_aln
+                _ws.freeze_panes = 'A2'
+                _ws.auto_filter.ref = _ws.dimensions
                 _buf = BytesIO(); _wb.save(_buf)
                 return _buf.getvalue()
 
