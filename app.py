@@ -960,6 +960,71 @@ def page_progress():
                 _buf = BytesIO(); _wb.save(_buf)
                 return _buf.getvalue()
 
+            def _build_summary_excel(df_all):
+                _wb = _pxl.Workbook()
+                _wb.remove(_wb.active)  # remove default sheet
+                _hdr_fill = _PFill('solid', fgColor='1E3A5F')
+                _hdr_font = _PFont(bold=True, color='FFFFFF', size=11)
+                _hdr_aln  = _PAlign(horizontal='center', vertical='center')
+                _num_aln  = _PAlign(horizontal='right',  vertical='center')
+                _txt_aln  = _PAlign(horizontal='left',   vertical='center')
+                _thin     = _PSide(style='thin', color='CCCCCC')
+                _border   = _PBorder(left=_thin, right=_thin, top=_thin, bottom=_thin)
+                _xl_cols  = [
+                    ('Priority',         10, '0'),
+                    ('Assembly',         18, None),
+                    ('Sub-Assembly',     22, None),
+                    ('Current Stage',    16, None),
+                    ('Total (kg)',       14, '#,##0.00'),
+                    ('Fit Up %',         12, '0.0%'),
+                    ('Welding %',        12, '0.0%'),
+                    ('Blast/Paint %',    14, '0.0%'),
+                    ('Blast D.O.',       14, None),
+                    ('Send to Site %',   16, '0.0%'),
+                    ('Send to Site D.O.',16, None),
+                ]
+                for pn in sorted(df_all['Priority'].unique()):
+                    grp = df_all[df_all['Priority'] == pn].sort_values(['Assembly', 'Sub-Assembly'])
+                    _ws = _wb.create_sheet(title=f'Priority {int(pn)}')
+                    for ci, (hdr, width, _) in enumerate(_xl_cols, 1):
+                        cell = _ws.cell(row=1, column=ci, value=hdr)
+                        cell.fill = _hdr_fill; cell.font = _hdr_font
+                        cell.alignment = _hdr_aln; cell.border = _border
+                        _ws.column_dimensions[cell.column_letter].width = width
+                    _ws.row_dimensions[1].height = 20
+                    for ri, (_, row) in enumerate(grp.iterrows(), 2):
+                        vals = [
+                            int(pn), row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
+                            row['Total (kg)'],
+                            row['FU%'] / 100, row['WD%'] / 100,
+                            row['BP%'] / 100, row.get('Blast D.O.', '') or '',
+                            row['STS%'] / 100, row.get('Send to Site D.O.', '') or '',
+                        ]
+                        _row_fill = _PFill('solid', fgColor='F0F4FA' if ri % 2 == 0 else 'FFFFFF')
+                        for ci, (val, (_, _, num_fmt)) in enumerate(zip(vals, _xl_cols), 1):
+                            cell = _ws.cell(row=ri, column=ci, value=val)
+                            cell.border = _border; cell.fill = _row_fill
+                            if num_fmt:
+                                cell.number_format = num_fmt; cell.alignment = _num_aln
+                            else:
+                                cell.alignment = _txt_aln
+                    _ws.freeze_panes = 'A2'
+                    _ws.auto_filter.ref = _ws.dimensions
+                _buf = BytesIO(); _wb.save(_buf)
+                return _buf.getvalue()
+
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            st.download_button(
+                '📥 Export All Priorities Summary',
+                _build_summary_excel(prio_df),
+                f'priority_summary_{ts}.xlsx',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                use_container_width=True,
+                type='primary',
+                key='dl_prio_summary',
+            )
+            st.divider()
+
             # One expander per priority number — Priority 1 expanded by default
             for prio_num in sorted(prio_df['Priority'].unique()):
                 grp = prio_df[prio_df['Priority'] == prio_num].sort_values(['Assembly', 'Sub-Assembly'])
