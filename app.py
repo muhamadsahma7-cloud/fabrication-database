@@ -880,16 +880,18 @@ def page_progress():
                         return label
                 return 'COMPLETE'
 
-            prio_df['Current Stage'] = prio_df.apply(_current_stage, axis=1)
+            all_df = df.copy()
+            all_df['Current Stage'] = all_df.apply(_current_stage, axis=1)
             for src, pct_col in [
                 ('Fit Up (kg)',       'FU%'),
                 ('Welding (kg)',      'WD%'),
                 ('Blast/Paint (kg)', 'BP%'),
                 ('Send to Site (kg)','STS%'),
             ]:
-                prio_df[pct_col] = prio_df.apply(
+                all_df[pct_col] = all_df.apply(
                     lambda r, c=src: _pct100(r[c], r['Total (kg)']), axis=1
                 )
+            prio_df = all_df[all_df['Priority'] > 0].copy()
 
             col_config = {
                 'Assembly':          st.column_config.TextColumn('Assembly',      width='medium'),
@@ -990,10 +992,16 @@ def page_progress():
                     cell.alignment = _hdr_aln; cell.border = _border
                     _ws.column_dimensions[cell.column_letter].width = width
                 _ws.row_dimensions[1].height = 20
-                sorted_df = df_all.sort_values(['Priority', 'Assembly', 'Sub-Assembly'])
+                sorted_df = df_all.copy()
+                sorted_df['_prio_sort'] = sorted_df['Priority'].apply(
+                    lambda x: x if (x is not None and str(x) != 'nan' and float(x) > 0) else 9999
+                )
+                sorted_df = sorted_df.sort_values(['_prio_sort', 'Assembly', 'Sub-Assembly'])
                 for ri, (_, row) in enumerate(sorted_df.iterrows(), 2):
+                    prio_val = row['Priority']
+                    prio_display = int(prio_val) if (prio_val is not None and str(prio_val) != 'nan' and float(prio_val) > 0) else None
                     vals = [
-                        int(row['Priority']), row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
+                        prio_display, row['Assembly'], row['Sub-Assembly'], row['Current Stage'],
                         row['Total (kg)'],
                         row['FU%'] / 100, row['WD%'] / 100,
                         row['BP%'] / 100, row.get('Blast D.O.', '') or '',
@@ -1015,7 +1023,7 @@ def page_progress():
             ts = datetime.now().strftime('%Y%m%d_%H%M%S')
             st.download_button(
                 '📥 Export All Priorities Summary',
-                _build_summary_excel(prio_df),
+                _build_summary_excel(all_df),
                 f'priority_summary_{ts}.xlsx',
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 use_container_width=True,
