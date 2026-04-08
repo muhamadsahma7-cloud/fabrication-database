@@ -185,6 +185,7 @@ def init():
         "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS work_order TEXT DEFAULT '001'",
         "ALTER TABLE assemblies ADD COLUMN IF NOT EXISTS priority INTEGER DEFAULT 0",
         "ALTER TABLE parts      ADD COLUMN IF NOT EXISTS priority INTEGER",
+        "ALTER TABLE progress   ADD COLUMN IF NOT EXISTS painting_done BOOLEAN DEFAULT FALSE",
     ]:
         db.execute(col_sql)
     db.commit()
@@ -1138,8 +1139,9 @@ def get_sub_assemblies(assembly_mark):
 def get_deliveries():
     db = _conn()
     rows = db.execute(
-        "SELECT p.entry_date, a.work_order, p.assembly_mark, p.sub_assembly_mark, p.stage, "
-        "p.delivery_order_no, p.weight_kg, p.qty, p.remarks "
+        "SELECT p.id, p.entry_date, a.work_order, p.assembly_mark, p.sub_assembly_mark, p.stage, "
+        "p.delivery_order_no, p.weight_kg, p.qty, p.remarks, "
+        "COALESCE(p.painting_done, FALSE) AS painting_done "
         "FROM progress p "
         "JOIN assemblies a ON p.assembly_mark = a.assembly_mark "
         "WHERE p.stage IN ('BLASTING & PAINTING','SEND TO SITE') "
@@ -1147,6 +1149,13 @@ def get_deliveries():
     ).fetchall()
     db.close()
     return [dict(r) for r in rows]
+
+
+def set_painting_done(progress_id, done: bool):
+    db = _conn()
+    db.execute("UPDATE progress SET painting_done = ? WHERE id = ?", (done, progress_id))
+    db.commit()
+    db.close()
 
 
 def get_parts(assembly_mark=None):

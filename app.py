@@ -1175,10 +1175,21 @@ def page_delivery():
 
     if rows:
         df = pd.DataFrame(rows)[
-            ['work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
-             'delivery_order_no', 'weight_kg', 'qty', 'remarks']]
-        df.columns = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
-                      'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
+            ['id', 'work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
+             'delivery_order_no', 'weight_kg', 'qty', 'remarks', 'painting_done']]
+        df.columns = ['ID', 'Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
+                      'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks', 'Painting Done']
+
+        # ── Painting Done summary ──────────────────────────────────────────────
+        bp_df = df[df['Type'] == 'BLASTING & PAINTING']
+        if not bp_df.empty:
+            done_kg    = bp_df[bp_df['Painting Done'] == True]['Weight (kg)'].sum()
+            pending_kg = bp_df[bp_df['Painting Done'] != True]['Weight (kg)'].sum()
+            pc1, pc2, pc3 = st.columns(3)
+            pc1.metric('B&P Total (kg)',       f'{bp_df["Weight (kg)"].sum():,.1f}')
+            pc2.metric('Painting Done (kg)',   f'{done_kg:,.1f}')
+            pc3.metric('Painting Pending (kg)',f'{pending_kg:,.1f}')
+            st.divider()
 
         # ── Summary by Activity ────────────────────────────────────────────────
         st.subheader('Summary by D.O. No.')
@@ -1203,17 +1214,36 @@ def page_delivery():
 
         st.divider()
         st.subheader('Detail')
-        st.dataframe(df, use_container_width=True, hide_index=True)
 
+        # ── B&P done toggle per row ────────────────────────────────────────────
+        disp_cols = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
+                     'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
+        for _, row in df[df['Type'] == 'BLASTING & PAINTING'].iterrows():
+            rc = st.columns([3, 1])
+            with rc[0]:
+                st.write(f"**{row['Assembly']}** / {row['Sub-Assembly']} — {row['Date']} — {row['Weight (kg)']:,.2f} kg")
+            with rc[1]:
+                done_now = bool(row['Painting Done'])
+                label    = '✅ Painting Done' if done_now else '⬜ Mark Done'
+                if st.button(label, key=f"pd_{row['ID']}", use_container_width=True):
+                    db.set_painting_done(int(row['ID']), not done_now)
+                    st.rerun()
+
+        if df[df['Type'] != 'BLASTING & PAINTING'].shape[0]:
+            st.dataframe(df[df['Type'] != 'BLASTING & PAINTING'][disp_cols],
+                         use_container_width=True, hide_index=True)
+
+        export_df = df[['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
+                         'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks', 'Painting Done']]
         ec1, ec2 = st.columns(2)
         with ec1:
             st.download_button('📥 Export CSV',
-                               df.to_csv(index=False).encode('utf-8'),
+                               export_df.to_csv(index=False).encode('utf-8'),
                                'delivery_log.csv', 'text/csv',
                                use_container_width=True)
         with ec2:
             buf = BytesIO()
-            df.to_excel(buf, index=False, engine='openpyxl')
+            export_df.to_excel(buf, index=False, engine='openpyxl')
             st.download_button('📥 Export Excel', buf.getvalue(),
                                'delivery_log.xlsx',
                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -2004,7 +2034,7 @@ def page_drawing():
 
 
 @st.cache_resource(show_spinner='Connecting to database…')
-def _init_db(_schema_v=7):
+def _init_db(_schema_v=8):
     """Run schema init once per server lifecycle. Increment _schema_v to bust cache."""
     db.init()
 
