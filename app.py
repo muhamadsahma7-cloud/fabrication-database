@@ -608,13 +608,16 @@ def page_report():
     proj_total = (_get_project_summary().get('total', 0) or 0)
 
     # ── Project Totals (cumulative up to selected date) ────────────────────────
+    painting_done_kg = db.get_painting_done_kg(up_to_date=sel_str)
     st.markdown(f"**Cumulative Progress as of {selected_date.strftime('%d %b %Y')}**")
-    pt_cols = st.columns(1 + len(db.STAGES))
+    pt_cols = st.columns(1 + len(db.STAGES) + 1)
     pt_cols[0].metric('Total Weight (kg)', f'{proj_total:,.1f}')
     for i, s in enumerate(db.STAGES):
         pct = min(proj_by_stage[s] / proj_total * 100, 100) if proj_total else 0
         pt_cols[i + 1].metric(f'{STAGE_BADGE[s]} {s}', f'{proj_by_stage[s]:,.1f} kg',
                               f'{pct:.1f}%')
+    paint_pct = min(painting_done_kg / proj_total * 100, 100) if proj_total else 0
+    pt_cols[-1].metric('🎨 Painting Done', f'{painting_done_kg:,.1f} kg', f'{paint_pct:.1f}%')
     st.divider()
 
     # stage_stats for avg/day (all-time aggregate, date-independent)

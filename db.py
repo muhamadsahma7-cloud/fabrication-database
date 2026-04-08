@@ -1158,6 +1158,24 @@ def set_painting_done(progress_id, done: bool):
     db.close()
 
 
+def get_painting_done_kg(up_to_date: str = None):
+    """Total weight_kg of B&P entries marked painting_done, optionally up to a date."""
+    db = _conn()
+    if up_to_date:
+        row = db.execute(
+            "SELECT COALESCE(SUM(weight_kg), 0) AS kg FROM progress "
+            "WHERE stage = 'BLASTING & PAINTING' AND painting_done = TRUE "
+            "AND entry_date <= ?", (up_to_date,)
+        ).fetchone()
+    else:
+        row = db.execute(
+            "SELECT COALESCE(SUM(weight_kg), 0) AS kg FROM progress "
+            "WHERE stage = 'BLASTING & PAINTING' AND painting_done = TRUE"
+        ).fetchone()
+    db.close()
+    return float(row['kg']) if row else 0.0
+
+
 def set_painting_done_by_do(do_no: str, done: bool):
     db = _conn()
     db.execute(
