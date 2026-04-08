@@ -1195,45 +1195,41 @@ def page_delivery():
 
         # ── Summary by Activity ────────────────────────────────────────────────
         st.subheader('Summary by D.O. No.')
-        activities = df['Type'].dropna().unique().tolist()
-        act_cols = st.columns(len(activities)) if activities else []
-        for col, act in zip(act_cols, activities):
-            with col:
-                st.markdown(f"**{act}**")
-                sub = df[df['Type'] == act]
-                grp = (
-                    sub.groupby('D.O. No.', dropna=False)
-                    .agg(**{'Total (kg)': ('Weight (kg)', 'sum'), 'Assemblies': ('Assembly', 'nunique')})
-                    .reset_index()
-                )
-                grp['Total (kg)'] = grp['Total (kg)'].map('{:,.2f}'.format)
-                st.dataframe(grp, use_container_width=True, hide_index=True)
-                act_total = sub['Weight (kg)'].sum()
-                st.caption(f"Subtotal: **{act_total:,.2f} kg**")
+
+        bp_sub = df[df['Type'] == 'BLASTING & PAINTING']
+        if not bp_sub.empty:
+            st.markdown('**BLASTING & PAINTING**')
+            for do_no, grp in bp_sub.groupby('D.O. No.', dropna=False):
+                do_label  = do_no if do_no else '(no D.O.)'
+                total_kg  = grp['Weight (kg)'].sum()
+                all_done  = bool(grp['Painting Done'].all())
+                dc1, dc2, dc3 = st.columns([2, 1, 1])
+                dc1.write(f"**D.O. {do_label}** — {grp['Assembly'].nunique()} assemblies — {total_kg:,.2f} kg")
+                dc2.write('✅ Done' if all_done else '⏳ Pending')
+                label = '↩ Unmark Done' if all_done else '✅ Mark D.O. Done'
+                if dc3.button(label, key=f'do_pd_{do_label}', use_container_width=True):
+                    db.set_painting_done_by_do(str(do_no), not all_done)
+                    st.rerun()
+
+        sts_sub = df[df['Type'] == 'SEND TO SITE']
+        if not sts_sub.empty:
+            st.markdown('**SEND TO SITE**')
+            grp = (
+                sts_sub.groupby('D.O. No.', dropna=False)
+                .agg(**{'Total (kg)': ('Weight (kg)', 'sum'), 'Assemblies': ('Assembly', 'nunique')})
+                .reset_index()
+            )
+            grp['Total (kg)'] = grp['Total (kg)'].map('{:,.2f}'.format)
+            st.dataframe(grp, use_container_width=True, hide_index=True)
 
         total_kg = df['Weight (kg)'].sum()
         st.caption(f"Grand total (filtered period): **{total_kg:,.2f} kg**")
 
         st.divider()
         st.subheader('Detail')
-
-        # ── B&P done toggle per row ────────────────────────────────────────────
         disp_cols = ['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
-                     'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks']
-        for _, row in df[df['Type'] == 'BLASTING & PAINTING'].iterrows():
-            rc = st.columns([3, 1])
-            with rc[0]:
-                st.write(f"**{row['Assembly']}** / {row['Sub-Assembly']} — {row['Date']} — {row['Weight (kg)']:,.2f} kg")
-            with rc[1]:
-                done_now = bool(row['Painting Done'])
-                label    = '✅ Painting Done' if done_now else '⬜ Mark Done'
-                if st.button(label, key=f"pd_{row['ID']}", use_container_width=True):
-                    db.set_painting_done(int(row['ID']), not done_now)
-                    st.rerun()
-
-        if df[df['Type'] != 'BLASTING & PAINTING'].shape[0]:
-            st.dataframe(df[df['Type'] != 'BLASTING & PAINTING'][disp_cols],
-                         use_container_width=True, hide_index=True)
+                     'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks', 'Painting Done']
+        st.dataframe(df[disp_cols], use_container_width=True, hide_index=True)
 
         export_df = df[['Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
                          'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks', 'Painting Done']]

@@ -1158,6 +1158,17 @@ def set_painting_done(progress_id, done: bool):
     db.close()
 
 
+def set_painting_done_by_do(do_no: str, done: bool):
+    db = _conn()
+    db.execute(
+        "UPDATE progress SET painting_done = ? "
+        "WHERE stage = 'BLASTING & PAINTING' AND delivery_order_no = ?",
+        (done, do_no)
+    )
+    db.commit()
+    db.close()
+
+
 def get_parts(assembly_mark=None):
     db = _conn()
     if assembly_mark:
