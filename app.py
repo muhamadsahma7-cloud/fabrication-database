@@ -1174,9 +1174,11 @@ def page_delivery():
             if str(start) <= r['entry_date'] <= str(end)] if all_rows else []
 
     if rows:
-        df = pd.DataFrame(rows)[
-            ['id', 'work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
-             'delivery_order_no', 'weight_kg', 'qty', 'remarks', 'painting_done']]
+        df = pd.DataFrame(rows)
+        if 'painting_done' not in df.columns:
+            df['painting_done'] = False
+        df = df[['id', 'work_order', 'entry_date', 'assembly_mark', 'sub_assembly_mark', 'stage',
+                 'delivery_order_no', 'weight_kg', 'qty', 'remarks', 'painting_done']]
         df.columns = ['ID', 'Work Order', 'Date', 'Assembly', 'Sub-Assembly', 'Type',
                       'D.O. No.', 'Weight (kg)', 'Qty', 'Remarks', 'Painting Done']
 
