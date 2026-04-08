@@ -33,6 +33,12 @@ STAGE_BADGE = {
     'BLASTING & PAINTING': '🟣',
     'SEND TO SITE':        '🟠',
 }
+STAGE_LABEL = {
+    'FIT UP':              'FIT UP',
+    'WELDING':             'WELDING',
+    'BLASTING & PAINTING': 'Delivery to Blasting & Painting',
+    'SEND TO SITE':        'Delivered to Site',
+}
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _get_marks():
@@ -300,7 +306,7 @@ def page_daily_entry():
 
             for i, s in enumerate(stages_r1):
                 if stage_cols[i].button(
-                    f'{STAGE_BADGE[s]} {s}',
+                    f'{STAGE_BADGE[s]} {STAGE_LABEL[s]}',
                     use_container_width=True,
                     type='primary' if st.session_state.sel_stage == s else 'secondary'
                 ):
@@ -308,7 +314,7 @@ def page_daily_entry():
                     st.rerun()
             for i, s in enumerate(stages_r2):
                 if stage_cols[i].button(
-                    f'{STAGE_BADGE[s]} {s}',
+                    f'{STAGE_BADGE[s]} {STAGE_LABEL[s]}',
                     use_container_width=True,
                     type='primary' if st.session_state.sel_stage == s else 'secondary'
                 ):
@@ -615,7 +621,7 @@ def page_report():
     col_idx = 1
     for s in db.STAGES:
         pct = min(proj_by_stage[s] / proj_total * 100, 100) if proj_total else 0
-        pt_cols[col_idx].metric(f'{STAGE_BADGE[s]} {s}', f'{proj_by_stage[s]:,.1f} kg', f'{pct:.1f}%')
+        pt_cols[col_idx].metric(f'{STAGE_BADGE[s]} {STAGE_LABEL[s]}', f'{proj_by_stage[s]:,.1f} kg', f'{pct:.1f}%')
         col_idx += 1
         if s == 'BLASTING & PAINTING':
             paint_pct = min(painting_done_kg / proj_total * 100, 100) if proj_total else 0
@@ -632,7 +638,7 @@ def page_report():
     tcols = st.columns(len(db.STAGES))
     for i, s in enumerate(db.STAGES):
         with tcols[i]:
-            st.metric(f'{STAGE_BADGE[s]} {s}', f'{today_by_stage[s]:,.1f} kg')
+            st.metric(f'{STAGE_BADGE[s]} {STAGE_LABEL[s]}', f'{today_by_stage[s]:,.1f} kg')
             if s == 'FIT UP':
                 d = fitup_stats['days']
                 st.metric('Avg/Day', f'{fitup_stats["avg_per_day"]:,.1f} kg',
@@ -747,7 +753,7 @@ def page_report():
             for i, s in enumerate(db.STAGES):
                 pct = min(stage_totals[s] / project_total * 100, 100) if project_total else 0
                 with metric_cols[i + 1]:
-                    st.metric(f'{STAGE_BADGE[s]} {s}',
+                    st.metric(f'{STAGE_BADGE[s]} {STAGE_LABEL[s]}',
                               f'{stage_totals[s]:,.1f} kg', f'{pct:.1f}%')
             st.divider()
 
@@ -818,7 +824,7 @@ def page_progress():
         done = summary.get(s, 0) or 0
         pct  = min(done / project_total * 100, 100) if project_total else 0
         with met_cols[i]:
-            st.metric(f'{STAGE_BADGE[s]} {s}', f'{done:,.1f} kg', f'{pct:.1f}%')
+            st.metric(f'{STAGE_BADGE[s]} {STAGE_LABEL[s]}', f'{done:,.1f} kg', f'{pct:.1f}%')
 
     st.divider()
 
@@ -877,10 +883,10 @@ def page_progress():
 
             def _current_stage(row):
                 for label, col in [
-                    ('FIT UP',       'Fit Up (kg)'),
-                    ('WELDING',      'Welding (kg)'),
-                    ('BLAST/PAINT',  'Blast/Paint (kg)'),
-                    ('SEND TO SITE', 'Send to Site (kg)'),
+                    ('FIT UP',                        'Fit Up (kg)'),
+                    ('WELDING',                       'Welding (kg)'),
+                    ('DELIVERY TO BLAST/PAINT',       'Blast/Paint (kg)'),
+                    ('DELIVERED TO SITE',             'Send to Site (kg)'),
                 ]:
                     if _pct100(row[col], row['Total (kg)']) < DONE_THRESHOLD * 100:
                         return label
@@ -1049,7 +1055,7 @@ def page_progress():
                     m_cols = st.columns(5)
                     for i, (stg, lbl) in enumerate([
                         ('FIT UP','Fit Up'), ('WELDING','Welding'),
-                        ('BLAST/PAINT','Blast/Paint'), ('SEND TO SITE','Send to Site'),
+                        ('DELIVERY TO BLAST/PAINT','Deliv. to B&P'), ('DELIVERED TO SITE','Delivered to Site'),
                         ('COMPLETE','Complete'),
                     ]):
                         m_cols[i].metric(lbl, int(counts.get(stg, 0)))
@@ -1204,7 +1210,7 @@ def page_delivery():
 
         bp_sub = df[df['Type'] == 'BLASTING & PAINTING']
         if not bp_sub.empty:
-            st.markdown('**BLASTING & PAINTING**')
+            st.markdown('**Delivery to Blasting & Painting**')
             for do_no, grp in bp_sub.groupby('D.O. No.', dropna=False):
                 do_label  = do_no if do_no else '(no D.O.)'
                 total_kg  = grp['Weight (kg)'].sum()
@@ -1219,7 +1225,7 @@ def page_delivery():
 
         sts_sub = df[df['Type'] == 'SEND TO SITE']
         if not sts_sub.empty:
-            st.markdown('**SEND TO SITE**')
+            st.markdown('**Delivered to Site**')
             grp = (
                 sts_sub.groupby('D.O. No.', dropna=False)
                 .agg(**{'Total (kg)': ('Weight (kg)', 'sum'), 'Assemblies': ('Assembly', 'nunique')})
