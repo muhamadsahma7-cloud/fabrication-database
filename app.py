@@ -612,12 +612,15 @@ def page_report():
     st.markdown(f"**Cumulative Progress as of {selected_date.strftime('%d %b %Y')}**")
     pt_cols = st.columns(1 + len(db.STAGES) + 1)
     pt_cols[0].metric('Total Weight (kg)', f'{proj_total:,.1f}')
-    for i, s in enumerate(db.STAGES):
+    col_idx = 1
+    for s in db.STAGES:
         pct = min(proj_by_stage[s] / proj_total * 100, 100) if proj_total else 0
-        pt_cols[i + 1].metric(f'{STAGE_BADGE[s]} {s}', f'{proj_by_stage[s]:,.1f} kg',
-                              f'{pct:.1f}%')
-    paint_pct = min(painting_done_kg / proj_total * 100, 100) if proj_total else 0
-    pt_cols[-1].metric('🎨 Painting Done', f'{painting_done_kg:,.1f} kg', f'{paint_pct:.1f}%')
+        pt_cols[col_idx].metric(f'{STAGE_BADGE[s]} {s}', f'{proj_by_stage[s]:,.1f} kg', f'{pct:.1f}%')
+        col_idx += 1
+        if s == 'BLASTING & PAINTING':
+            paint_pct = min(painting_done_kg / proj_total * 100, 100) if proj_total else 0
+            pt_cols[col_idx].metric('🎨 Painting Done', f'{painting_done_kg:,.1f} kg', f'{paint_pct:.1f}%')
+            col_idx += 1
     st.divider()
 
     # stage_stats for avg/day (all-time aggregate, date-independent)
