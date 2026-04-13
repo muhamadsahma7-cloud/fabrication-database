@@ -674,19 +674,31 @@ def import_excel(file_source):
             )
             raw.commit()
 
-        # 3. Progress — delete ALL entries for every imported assembly_mark, then insert
-        # non-zero entries. Deleting by assembly_mark (not by stage+kg>0) ensures stale
-        # entries from previous imports are fully replaced, even if kg is now 0.
+        # 3. Progress — preserve painting_done flags before wiping, restore after re-insert
         prog_rows  = [(ds, asm, sub, stg, kg, do_no)
                       for (asm, sub, stg), (kg, ds, do_no) in progress_map.items()]
         prog_count = 0
         if asm_order:
+            # Save existing painting_done flags keyed by (assembly_mark, sub_assembly_mark, delivery_order_no)
+            cur.execute(
+                "SELECT assembly_mark, sub_assembly_mark, delivery_order_no, painting_done "
+                "FROM progress "
+                "WHERE stage = 'BLASTING & PAINTING' AND painting_done = TRUE "
+                "AND assembly_mark = ANY(%s)",
+                (list(asm_order),)
+            )
+            painting_done_map = {
+                (r['assembly_mark'], r['sub_assembly_mark'], r['delivery_order_no']): True
+                for r in cur.fetchall()
+            }
             psycopg2.extras.execute_values(
                 cur,
                 "DELETE FROM progress WHERE assembly_mark IN (SELECT v FROM (VALUES %s) AS t(v))",
                 [(asm,) for asm in asm_order],
             )
             raw.commit()
+        else:
+            painting_done_map = {}
         if prog_rows:
             psycopg2.extras.execute_values(
                 cur,
@@ -695,6 +707,16 @@ def import_excel(file_source):
                 prog_rows,
             )
             raw.commit()
+            # Restore painting_done flags
+            if painting_done_map:
+                for (asm, sub, do_no), _ in painting_done_map.items():
+                    cur.execute(
+                        "UPDATE progress SET painting_done = TRUE "
+                        "WHERE assembly_mark = %s AND sub_assembly_mark = %s "
+                        "AND stage = 'BLASTING & PAINTING' AND delivery_order_no = %s",
+                        (asm, sub, do_no)
+                    )
+                raw.commit()
             prog_count = len(prog_rows)
 
         cur.close()
