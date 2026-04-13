@@ -680,8 +680,9 @@ def import_excel(file_source):
         prog_count = 0
         if asm_order:
             # Save existing painting_done flags keyed by (assembly_mark, sub_assembly_mark, delivery_order_no)
-            cur.execute(
-                "SELECT assembly_mark, sub_assembly_mark, delivery_order_no, painting_done "
+            dict_cur = raw.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            dict_cur.execute(
+                "SELECT assembly_mark, sub_assembly_mark, delivery_order_no "
                 "FROM progress "
                 "WHERE stage = 'BLASTING & PAINTING' AND painting_done = TRUE "
                 "AND assembly_mark = ANY(%s)",
@@ -689,8 +690,9 @@ def import_excel(file_source):
             )
             painting_done_map = {
                 (r['assembly_mark'], r['sub_assembly_mark'], r['delivery_order_no']): True
-                for r in cur.fetchall()
+                for r in dict_cur.fetchall()
             }
+            dict_cur.close()
             psycopg2.extras.execute_values(
                 cur,
                 "DELETE FROM progress WHERE assembly_mark IN (SELECT v FROM (VALUES %s) AS t(v))",
