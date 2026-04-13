@@ -111,6 +111,10 @@ def _get_all_daily_stage_totals():
 def _get_missing_vi():
     return db.get_missing_visual_inspections()
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _get_deliveries():
+    return db.get_deliveries()
+
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -1181,7 +1185,7 @@ def page_delivery():
     with c2:
         end = st.date_input('To', value=date.today(), key='del_end')
 
-    all_rows = db.get_deliveries()
+    all_rows = _get_deliveries()
     rows = [r for r in all_rows
             if str(start) <= r['entry_date'] <= str(end)] if all_rows else []
 
@@ -1221,6 +1225,7 @@ def page_delivery():
                 label = '↩ Unmark Done' if all_done else '✅ Mark D.O. Done'
                 if dc3.button(label, key=f'do_pd_{do_label}', use_container_width=True):
                     db.set_painting_done_by_do(str(do_no), not all_done)
+                    _get_deliveries.clear()
                     st.rerun()
 
         sts_sub = df[df['Type'] == 'SEND TO SITE']
