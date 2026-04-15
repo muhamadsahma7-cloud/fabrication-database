@@ -1215,16 +1215,40 @@ def page_delivery():
         bp_sub = df[df['Type'] == 'BLASTING & PAINTING']
         if not bp_sub.empty:
             st.markdown('**Delivery to Blasting & Painting**')
-            for do_no, grp in bp_sub.groupby('D.O. No.', dropna=False):
-                do_label  = do_no if do_no else '(no D.O.)'
-                total_kg  = grp['Weight (kg)'].sum()
-                all_done  = bool(grp['Painting Done'].all())
-                dc1, dc2, dc3 = st.columns([2, 1, 1])
-                dc1.write(f"**D.O. {do_label}** — {grp['Assembly'].nunique()} assemblies — {total_kg:,.2f} kg")
-                dc2.write('✅ Done' if all_done else '⏳ Pending')
-                label = '↩ Unmark Done' if all_done else '✅ Mark D.O. Done'
-                if dc3.button(label, key=f'do_pd_{do_label}', use_container_width=True):
-                    db.set_painting_done_by_do(str(do_no), not all_done)
+
+            # Build per-D.O. summary
+            do_groups = {do_no: grp for do_no, grp in bp_sub.groupby('D.O. No.', dropna=False)}
+            do_status = {do_no: bool(grp['Painting Done'].all()) for do_no, grp in do_groups.items()}
+
+            # Header row
+            hc = st.columns([.3, 2, 1, 1])
+            hc[1].markdown('**D.O. No.**')
+            hc[2].markdown('**Total (kg)**')
+            hc[3].markdown('**Status**')
+
+            selected_dos = []
+            for do_no, grp in do_groups.items():
+                do_label = do_no if do_no else '(no D.O.)'
+                total_kg = grp['Weight (kg)'].sum()
+                all_done = do_status[do_no]
+                rc = st.columns([.3, 2, 1, 1])
+                checked = rc[0].checkbox('', key=f'chk_do_{do_label}', value=False, label_visibility='collapsed')
+                if checked:
+                    selected_dos.append((do_no, all_done))
+                rc[1].write(f"D.O. {do_label} — {grp['Assembly'].nunique()} asm")
+                rc[2].write(f"{total_kg:,.2f}")
+                rc[3].write('✅ Done' if all_done else '⏳ Pending')
+
+            if selected_dos:
+                mc1, mc2 = st.columns(2)
+                if mc1.button('✅ Mark Selected Done', type='primary', use_container_width=True, key='mark_sel_done'):
+                    for do_no, _ in selected_dos:
+                        db.set_painting_done_by_do(str(do_no), True)
+                    _get_deliveries.clear()
+                    st.rerun()
+                if mc2.button('↩ Unmark Selected', use_container_width=True, key='unmark_sel_done'):
+                    for do_no, _ in selected_dos:
+                        db.set_painting_done_by_do(str(do_no), False)
                     _get_deliveries.clear()
                     st.rerun()
 
