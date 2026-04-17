@@ -508,6 +508,7 @@ def page_daily_entry():
                         _get_today_progress.clear()
                         _get_stage_daily_stats.clear()
                         _get_completed_stages.clear()
+                        _get_all_daily_stage_totals.clear()
                         st.success(f'Saved {count} entries.')
                         st.rerun()
                 with c2:
@@ -538,6 +539,7 @@ def page_daily_entry():
                             _get_today_progress.clear()
                             _get_stage_daily_stats.clear()
                             _get_completed_stages.clear()
+                            _get_all_daily_stage_totals.clear()
                             st.success(f'Deleted entry #{int(del_id)}')
                             st.rerun()
             else:
@@ -790,6 +792,7 @@ def page_report():
                     _get_today_progress.clear()
                     _get_stage_daily_stats.clear()
                     _get_completed_stages.clear()
+                    _get_all_daily_stage_totals.clear()
                     st.session_state.report_rows = [r for r in st.session_state.report_rows
                                                     if r['id'] != row['id']]
                     st.rerun()
@@ -1456,6 +1459,7 @@ def page_manage():
                 _get_today_progress.clear()
                 _get_stage_daily_stats.clear()
                 _get_completed_stages.clear()
+                _get_all_daily_stage_totals.clear()
                 _get_visual_inspection_summary.clear()
                 _get_raw_material_summary.clear()
                 _vi_passed.clear()
